@@ -1584,6 +1584,10 @@ export class Scraper extends EventEmitter {
         return;
       }
 
+      // 初始化运行时状态基线，避免统计依赖延迟更新导致计数不一致
+      this.stateManager.setStartTime();
+      urls.forEach((url, index) => this.stateManager.setUrlIndex(url, index));
+
       // 开始进度追踪
       this.progressTracker.start(urls.length);
 

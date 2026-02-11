@@ -66,6 +66,7 @@ describe('Scraper', () => {
         markProcessed: jest.fn(),
         markFailed: jest.fn(),
         clearFailure: jest.fn(),
+        setStartTime: jest.fn(),
         setUrlIndex: jest.fn(),
         getFailedUrls: jest.fn().mockReturnValue([]),
         state: {
@@ -512,6 +513,11 @@ describe('Scraper', () => {
 
       expect(scraper.initialize).toHaveBeenCalled();
       expect(scraper.collectUrls).toHaveBeenCalled();
+      expect(mockDependencies.stateManager.setStartTime).toHaveBeenCalledTimes(1);
+      expect(mockDependencies.stateManager.setUrlIndex).toHaveBeenCalledWith(
+        'https://example.com/page1',
+        0
+      );
       expect(mockDependencies.progressTracker.start).toHaveBeenCalledWith(1);
       expect(mockDependencies.queueManager.addTask).toHaveBeenCalled();
       expect(mockDependencies.queueManager.waitForIdle).toHaveBeenCalled();

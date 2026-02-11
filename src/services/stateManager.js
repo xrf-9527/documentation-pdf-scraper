@@ -206,8 +206,10 @@ export class StateManager extends EventEmitter {
    * 标记URL为失败
    */
   markFailed(url, error) {
-    this.state.failedUrls.set(url, error.message || String(error));
-    this.emit('url-failed', { url, error: error.message });
+    const errorMessage = error?.message || String(error);
+    this.state.processedUrls.delete(url);
+    this.state.failedUrls.set(url, errorMessage);
+    this.emit('url-failed', { url, error: errorMessage });
   }
 
   /**
@@ -240,7 +242,7 @@ export class StateManager extends EventEmitter {
     const total = this.state.urlToIndex.size;
     const processed = this.state.processedUrls.size;
     const failed = this.state.failedUrls.size;
-    const pending = total - processed - failed;
+    const pending = Math.max(0, total - processed - failed);
 
     return {
       total,
