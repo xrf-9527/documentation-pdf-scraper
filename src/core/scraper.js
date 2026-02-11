@@ -1637,14 +1637,15 @@ export class Scraper extends EventEmitter {
 
       const duration = Date.now() - this.startTime;
       const stats = this.progressTracker.getStats();
+      const succeededCount = stats.succeeded ?? stats.completed ?? 0;
 
       this.logger.info('=== 爬虫运行完成 ===', {
         总URL数: urls.length,
-        成功数: stats.processed,
+        成功数: succeededCount,
         失败数: stats.failed,
         跳过数: stats.skipped,
         耗时: `${Math.round(duration / 1000)}秒`,
-        成功率: `${((stats.processed / urls.length) * 100).toFixed(1)}%`,
+        成功率: `${((succeededCount / urls.length) * 100).toFixed(1)}%`,
       });
 
       this.emit('completed', {

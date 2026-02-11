@@ -334,6 +334,7 @@ describe('ProgressTracker', () => {
       const stats = progressTracker.getStats();
 
       expect(stats.total).toBe(100);
+      expect(stats.succeeded).toBe(2);
       expect(stats.processed).toBe(4); // 基于唯一URL
       expect(stats.percentage).toBe('4.00');
       expect(stats.rate).toMatch(/^\d+\.\d{2}$/);
@@ -346,6 +347,7 @@ describe('ProgressTracker', () => {
 
       const stats = progressTracker.getStats();
 
+      expect(stats.succeeded).toBe(0);
       expect(stats.processed).toBe(0);
       expect(stats.percentage).toBe('0.00');
       expect(stats.rate).toBe('0.00');

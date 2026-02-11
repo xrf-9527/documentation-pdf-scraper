@@ -119,17 +119,21 @@ class Application {
 
       // 获取爬虫统计信息
       const stats = progressTracker.getStats();
+      const normalizedStats = {
+        ...stats,
+        succeeded: stats.succeeded ?? stats.completed ?? 0,
+      };
       const scrapeTime = Date.now() - scrapeStartTime;
 
       this.logger.info('✅ Web scraping completed successfully', {
         duration: scrapeTime,
-        stats,
+        stats: normalizedStats,
       });
 
       return {
         success: true,
         duration: scrapeTime,
-        stats,
+        stats: normalizedStats,
       };
     } catch (error) {
       this.logger.error('❌ Web scraping failed:', error);

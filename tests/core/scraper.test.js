@@ -542,6 +542,34 @@ describe('Scraper', () => {
       expect(scraper.cleanup).toHaveBeenCalled();
     });
 
+    it('should use succeeded count for completion success metrics', async () => {
+      scraper.collectUrls.mockResolvedValue([
+        'https://example.com/page1',
+        'https://example.com/page2',
+        'https://example.com/page3',
+      ]);
+      mockDependencies.progressTracker.getStats.mockReturnValue({
+        processed: 3,
+        succeeded: 2,
+        failed: 1,
+        skipped: 0,
+        total: 3,
+      });
+
+      await scraper.run();
+
+      expect(mockDependencies.logger.info).toHaveBeenCalledWith(
+        '=== 爬虫运行完成 ===',
+        expect.objectContaining({
+          总URL数: 3,
+          成功数: 2,
+          失败数: 1,
+          跳过数: 0,
+          成功率: '66.7%',
+        })
+      );
+    });
+
     it('should throw if already running', async () => {
       scraper.isRunning = true;
       await expect(scraper.run()).rejects.toThrow(ValidationError);

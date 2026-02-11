@@ -207,10 +207,12 @@ export class ProgressTracker extends EventEmitter {
    * 获取统计信息
    */
   getStats() {
-    // 计算基于实际处理的唯一URL数量
-    const processedUrls = Array.from(this.urlStats.values()).filter(
+    // 使用唯一URL终态统计，避免重试导致重复计数
+    const urlStats = Array.from(this.urlStats.values());
+    const processedUrls = urlStats.filter(
       (stat) => stat.status === 'success' || stat.status === 'failed' || stat.status === 'skipped'
     ).length;
+    const succeededUrls = urlStats.filter((stat) => stat.status === 'success').length;
 
     const percentage =
       this.stats.total > 0 ? ((processedUrls / this.stats.total) * 100).toFixed(2) : 0;
@@ -220,6 +222,7 @@ export class ProgressTracker extends EventEmitter {
 
     return {
       ...this.stats,
+      succeeded: succeededUrls,
       processed: processedUrls, // 使用基于唯一URL的计数
       percentage,
       rate: rate.toFixed(2),
