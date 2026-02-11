@@ -16,10 +16,13 @@
     "format:check": "prettier --check \"{src,tests,scripts}/**/*.{js,mjs,cjs,md,json,yml,yaml}\"",
     "docs:openai": "node scripts/use-doc-target.js use openai",
     "docs:claude": "node scripts/use-doc-target.js use claude-code",
+    "docs:openclaw": "node scripts/use-doc-target.js use openclaw-zh-cn",
     "docs:list": "node scripts/use-doc-target.js list",
     "docs:current": "node scripts/use-doc-target.js current",
     "docs:anthropic": "node scripts/use-doc-target.js use anthropic-research",
-    "docs:claude-blog": "node scripts/use-doc-target.js use claude-blog"
+    "docs:claude-blog": "node scripts/use-doc-target.js use claude-blog",
+    "docs:openclaw:update-urls": "node scripts/update-openclaw-target-urls.js",
+    "docs:openclaw:verify": "node scripts/verify-openclaw-target-coverage.js"
   },
   "keywords": [
     "scraper",

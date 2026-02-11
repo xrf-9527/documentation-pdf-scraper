@@ -6,7 +6,7 @@ VENV_PYTHON = $(VENV_DIR)/bin/python
 VENV_PIP = $(VENV_DIR)/bin/pip
 NODE_MODULES = node_modules
 
-.PHONY: help install install-python install-node venv clean-venv clean clean-all clean-cache run run-clean test demo lint lint-fix check-venv python-info kindle7 kindle-paperwhite kindle-oasis kindle-scribe kindle-all reset-config list-configs clean-kindle docs-openai docs-claude docs-cloudflare docs-anthropic docs-53ai docs-claude-blog docs-current
+.PHONY: help install install-python install-node venv clean-venv clean clean-all clean-cache run run-clean test demo lint lint-fix ci verify-openclaw check-venv python-info kindle7 kindle-paperwhite kindle-oasis kindle-scribe kindle-all reset-config list-configs clean-kindle docs-openai docs-claude docs-openclaw docs-cloudflare docs-anthropic docs-53ai docs-claude-blog docs-current
 
 help:
 	@echo "Available commands:"
@@ -19,6 +19,8 @@ help:
 	@echo "  run-clean     - Clean output and generate PDF documentation"
 	@echo "  test          - Run tests"
 	@echo "  lint          - Run linter"
+	@echo "  verify-openclaw - Verify openclaw zh-CN targetUrls coverage against sitemap"
+	@echo "  ci            - Run CI checks (test + lint + verify-openclaw)"
 	@echo "  clean         - Clean generated PDFs and metadata"
 	@echo "  clean-cache   - Clean translation cache and metadata (keep PDFs)"
 	@echo "  clean-all     - Clean everything including dependencies"
@@ -110,6 +112,15 @@ demo:
 lint:
 	@echo "Running linter..."
 	npm run lint
+
+# Verify OpenClaw zh-CN target URLs coverage
+verify-openclaw:
+	@echo "Verifying OpenClaw zh-CN target URL coverage..."
+	npm run docs:openclaw:verify
+
+# CI checks
+ci: test lint verify-openclaw
+	@echo "✅ CI checks passed"
 
 # Fix linting issues
 lint-fix:
@@ -222,6 +233,9 @@ docs-openai:
 
 docs-claude:
 	@node $(DOC_TARGET_SCRIPT) use claude-code
+
+docs-openclaw:
+	@node $(DOC_TARGET_SCRIPT) use openclaw
 
 docs-cloudflare:
 	@node $(DOC_TARGET_SCRIPT) use cloudflare-blog
