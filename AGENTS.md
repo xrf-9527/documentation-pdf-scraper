@@ -355,6 +355,31 @@ node scripts/use-kindle-config.js current
 - **Cause**: Conflict between `stateManager` and `metadataService`.
 - **Fix**: adherence to SSOT. `metadataService` is the ONLY truth for content metadata (titles, sections). `stateManager` only tracks process state (URLs visited).
 
+### Progress/Retry Consistency
+- **Problem**: `progress.json` shows the same URL in both processed and failed sets, retry statistics become unstable, or retry loops include already-processed URLs.
+- **Cause**:
+  - State transitions are not strictly disjoint across retries.
+  - Historical failed records are not cleared after a URL is successfully processed.
+- **Fixes**:
+  - Keep `processedUrls` and `failedUrls` disjoint in `stateManager` load/save paths (sanitize on read and write).
+  - In retry flow (`scraper.retryFailedUrls`), treat "failed but already processed" as stale:
+    - skip retry for that URL,
+    - clear failed record immediately.
+  - Add regression tests in both `tests/services/stateManager.test.js` and `tests/core/scraper.test.js`.
+
+### Progress Metrics Semantics (Critical)
+- **Definitions (must stay stable):**
+  - `succeeded`: URLs with final status `success`.
+  - `processed`: URLs with terminal status (`success` + `failed` + `skipped`).
+- **Rule**: Never use `processed` as "success count" when reporting success rate.
+- **Implementation notes**:
+  - `progressTracker.getStats()` should expose both `succeeded` and `processed`.
+  - `scraper.run()` completion logs must compute `成功数/成功率` from `succeeded`.
+  - `app.runScraping()` should pass through normalized stats to avoid ambiguous downstream interpretation.
+- **Quick verification**:
+  - Compare final `爬取任务完成` summary and `=== 爬虫运行完成 ===` log block.
+  - Their success metrics must be consistent for the same run.
+
 ### PDF Generation & Pandoc
 - **Problem**: Code blocks run off the page or tables render as raw text.
 - **Cause**:
