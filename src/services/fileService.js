@@ -106,10 +106,16 @@ export class FileService {
       try {
         current = await this.readJson(filePath, defaultValue);
       } catch (error) {
-        if (!options.recoverInvalidJson) {
+        const shouldRecover =
+          options.recoverInvalidJson && this.isRecoverableJsonParseError(error);
+
+        if (!shouldRecover) {
           throw error;
         }
 
+        this.logger.warn?.(`JSON文件损坏，使用默认值恢复: ${filePath}`, {
+          error: error.message,
+        });
         current = structuredClone(defaultValue);
       }
 
@@ -117,6 +123,31 @@ export class FileService {
       await this.writeJson(filePath, next);
       return next;
     });
+  }
+
+  /**
+   * 判断错误是否为可恢复的JSON解析错误
+   */
+  isRecoverableJsonParseError(error) {
+    if (!error) return false;
+    if (error instanceof SyntaxError) return true;
+
+    if (error instanceof FileOperationError && error.details?.operation === 'readJson') {
+      const message = error.message || '';
+      const parseErrorPatterns = [
+        /unexpected (token|end|non-whitespace)/i,
+        /unterminated string/i,
+        /bad control character/i,
+        /expected (property name|','|':')/i,
+        /json\.parse/i,
+        /in json at position/i,
+        /end of json input/i,
+      ];
+
+      return parseErrorPatterns.some((pattern) => pattern.test(message));
+    }
+
+    return false;
   }
 
   /**

@@ -114,5 +114,39 @@ describe('FileService', () => {
       const data = await fileService.readJson(filePath, {});
       expect(Object.keys(data)).toHaveLength(50);
     });
+
+    test('should recover when file has invalid JSON and recoverInvalidJson is enabled', async () => {
+      const filePath = path.join(testDir, 'broken.json');
+      await fs.writeFile(filePath, '{"key":"value"}\n}', 'utf8');
+
+      const result = await fileService.updateJson(
+        filePath,
+        {},
+        (draft) => {
+          draft.fixed = true;
+          return draft;
+        },
+        { recoverInvalidJson: true }
+      );
+
+      expect(result).toEqual({ fixed: true });
+      expect(await fileService.readJson(filePath, {})).toEqual({ fixed: true });
+    });
+
+    test('should not recover non-parse read errors even when recoverInvalidJson is enabled', async () => {
+      const dirPath = path.join(testDir, 'as-directory');
+      await fs.mkdir(dirPath, { recursive: true });
+
+      const updater = jest.fn((draft) => {
+        draft.changed = true;
+        return draft;
+      });
+
+      await expect(
+        fileService.updateJson(dirPath, {}, updater, { recoverInvalidJson: true })
+      ).rejects.toThrow();
+
+      expect(updater).not.toHaveBeenCalled();
+    });
   });
 });
