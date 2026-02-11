@@ -6,6 +6,24 @@ import { FileOperationError } from '../utils/errors.js';
 export class FileService {
   constructor(logger) {
     this.logger = logger;
+    this.fileQueues = new Map();
+  }
+
+  /**
+   * 按文件串行化操作，避免并发写入导致数据覆盖
+   */
+  enqueueFileOperation(filePath, operation) {
+    const queueKey = path.resolve(filePath);
+    const previous = this.fileQueues.get(queueKey) || Promise.resolve();
+    const next = previous.catch(() => {}).then(operation);
+
+    this.fileQueues.set(queueKey, next);
+
+    return next.finally(() => {
+      if (this.fileQueues.get(queueKey) === next) {
+        this.fileQueues.delete(queueKey);
+      }
+    });
   }
 
   /**
@@ -57,18 +75,48 @@ export class FileService {
    * 写入JSON文件
    */
   async writeJson(filePath, data) {
+    let tmpPath = null;
+
     try {
       const content = JSON.stringify(data, null, 2);
       await this.ensureDirectory(path.dirname(filePath));
-      await fs.writeFile(filePath, content, 'utf8');
+      tmpPath = `${filePath}.tmp-${process.pid}-${Date.now()}`;
+      await fs.writeFile(tmpPath, content, 'utf8');
+      await fs.rename(tmpPath, filePath);
       this.logger.debug(`写入JSON文件: ${filePath}`);
     } catch (error) {
+      if (tmpPath) {
+        await fs.rm(tmpPath, { force: true }).catch(() => {});
+      }
       throw new FileOperationError(
         `写入JSON文件失败: ${filePath} - ${error.message}`,
         filePath,
         'writeJson'
       );
     }
+  }
+
+  /**
+   * 读取-更新-写入 JSON（串行 + 原子写）
+   */
+  async updateJson(filePath, defaultValue, updater, options = {}) {
+    return this.enqueueFileOperation(filePath, async () => {
+      let current;
+
+      try {
+        current = await this.readJson(filePath, defaultValue);
+      } catch (error) {
+        if (!options.recoverInvalidJson) {
+          throw error;
+        }
+
+        current = structuredClone(defaultValue);
+      }
+
+      const next = await updater(current);
+      await this.writeJson(filePath, next);
+      return next;
+    });
   }
 
   /**

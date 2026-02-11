@@ -98,4 +98,21 @@ describe('FileService', () => {
       ]);
     });
   });
+
+  describe('updateJson', () => {
+    test('should serialize concurrent JSON updates without corruption', async () => {
+      const filePath = path.join(testDir, 'titles.json');
+      await Promise.all(
+        Array.from({ length: 50 }, (_, i) =>
+          fileService.updateJson(filePath, {}, (draft) => {
+            draft[String(i)] = `title-${i}`;
+            return draft;
+          })
+        )
+      );
+
+      const data = await fileService.readJson(filePath, {});
+      expect(Object.keys(data)).toHaveLength(50);
+    });
+  });
 });
