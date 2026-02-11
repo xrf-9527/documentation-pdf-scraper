@@ -28,8 +28,20 @@ export class ProgressTracker extends EventEmitter {
    * 开始追踪
    */
   start(total, options = {}) {
-    this.stats.total = total;
-    this.stats.startTime = Date.now();
+    // 允许重复调用 start()，确保状态和定时器完全重置
+    this.stopProgressDisplay();
+    this.urlStats.clear();
+    this.stats = {
+      total,
+      completed: 0,
+      failed: 0,
+      skipped: 0,
+      retried: 0,
+      startTime: Date.now(),
+      endTime: null,
+      currentUrl: null,
+      eta: null,
+    };
     this.displayMode = options.displayMode || 'detailed';
 
     this.logger.info('开始爬取任务', {

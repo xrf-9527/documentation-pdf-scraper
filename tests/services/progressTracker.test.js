@@ -91,6 +91,23 @@ describe('ProgressTracker', () => {
       expect(progressTracker.displayMode).toBe('simple');
       expect(progressTracker.progressInterval).toBeNull();
     });
+
+    test('start should clear previous interval and reset state', () => {
+      progressTracker.start(10);
+      const firstInterval = progressTracker.progressInterval;
+      progressTracker.success('url1');
+
+      progressTracker.start(5);
+
+      expect(progressTracker.stats.total).toBe(5);
+      expect(progressTracker.stats.completed).toBe(0);
+      expect(progressTracker.stats.failed).toBe(0);
+      expect(progressTracker.stats.skipped).toBe(0);
+      expect(progressTracker.stats.retried).toBe(0);
+      expect(progressTracker.urlStats.size).toBe(0);
+      expect(progressTracker.progressInterval).not.toBeNull();
+      expect(progressTracker.progressInterval).not.toBe(firstInterval);
+    });
   });
 
   describe('success', () => {
