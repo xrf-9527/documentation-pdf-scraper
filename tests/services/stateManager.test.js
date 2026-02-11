@@ -117,6 +117,30 @@ describe('StateManager', () => {
       expect(stateManager.state.failedUrls.size).toBe(0);
       expect(stateManager.state.urlToIndex.size).toBe(0);
     });
+
+    test('load时应修复 processed/failed 重叠并以失败优先', async () => {
+      mockFileService.readJson
+        .mockResolvedValueOnce({
+          processedUrls: ['url-1', 'url-2'],
+          failedUrls: [{ url: 'url-2', error: 'stale error' }],
+          urlToIndex: { 'url-1': 1, 'url-2': 2 },
+          startTime: null,
+        })
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce({});
+
+      await stateManager.load();
+
+      expect(stateManager.state.processedUrls.has('url-1')).toBe(true);
+      expect(stateManager.state.processedUrls.has('url-2')).toBe(false);
+      expect(stateManager.state.failedUrls.get('url-2')).toBe('stale error');
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        '检测到状态重叠，按失败优先修复',
+        expect.objectContaining({
+          重叠数量: 1,
+        })
+      );
+    });
   });
 
   describe('save', () => {
@@ -179,6 +203,21 @@ describe('StateManager', () => {
       await stateManager.save(true);
 
       expect(mockFileService.writeJson).toHaveBeenCalled();
+    });
+
+    test('save时应写出无重叠的processed/failed状态', async () => {
+      stateManager.state.processedUrls.add('url-1');
+      stateManager.state.failedUrls.set('url-1', 'error');
+
+      await stateManager.save(true);
+
+      expect(mockFileService.writeJson).toHaveBeenCalledWith(
+        '/metadata/progress.json',
+        expect.objectContaining({
+          processedUrls: [],
+          failedUrls: [{ url: 'url-1', error: 'error' }],
+        })
+      );
     });
 
     test('应该处理保存错误', async () => {

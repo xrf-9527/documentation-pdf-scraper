@@ -72,6 +72,8 @@ export class StateManager extends EventEmitter {
       );
       Object.entries(urlMapping).forEach(([url, data]) => this.state.urlToFile.set(url, data.path));
 
+      this._enforceDisjointState('load');
+
       this.logger.info('状态加载完成', {
         已处理: this.state.processedUrls.size,
         失败: this.state.failedUrls.size,
@@ -97,6 +99,9 @@ export class StateManager extends EventEmitter {
       }
 
       this.logger.debug('保存状态数据...');
+
+      // 兜底修复历史脏状态，保证 processed/failed 永远互斥
+      this._enforceDisjointState('save');
 
       // 保存进度数据
       const urlToIndexObj = {};
@@ -143,6 +148,36 @@ export class StateManager extends EventEmitter {
       this.logger.error('状态保存失败', { error: error.message });
       this.emit('save-error', error);
     }
+  }
+
+  /**
+   * 保证 processedUrls 与 failedUrls 互斥（失败优先）
+   * 历史版本可能写入重叠状态，这里在 load/save 时自动修复
+   */
+  _enforceDisjointState(source = 'runtime') {
+    const overlappedUrls = [];
+    this.state.failedUrls.forEach((_, url) => {
+      if (this.state.processedUrls.has(url)) {
+        overlappedUrls.push(url);
+      }
+    });
+
+    if (overlappedUrls.length === 0) {
+      return 0;
+    }
+
+    overlappedUrls.forEach((url) => {
+      this.state.processedUrls.delete(url);
+      this.state.urlToFile.delete(url);
+    });
+
+    this.logger.warn('检测到状态重叠，按失败优先修复', {
+      来源: source,
+      重叠数量: overlappedUrls.length,
+      示例: overlappedUrls.slice(0, 5),
+    });
+
+    return overlappedUrls.length;
   }
 
   /**

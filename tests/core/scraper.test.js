@@ -497,6 +497,22 @@ describe('Scraper', () => {
 
       expect(mockDependencies.logger.info).toHaveBeenCalledWith('没有需要重试的失败URL');
     });
+
+    it('should skip stale failed URL already marked as processed', async () => {
+      const staleUrl = 'https://example.com/stale';
+      mockDependencies.stateManager.getFailedUrls.mockReturnValue([[staleUrl, { message: 'old' }]]);
+      mockDependencies.stateManager.isProcessed.mockImplementation((url) => url === staleUrl);
+      const scrapeSpy = jest.spyOn(scraper, 'scrapePage').mockResolvedValue({ status: 'success' });
+
+      await scraper.retryFailedUrls();
+
+      expect(mockDependencies.stateManager.clearFailure).toHaveBeenCalledWith(staleUrl);
+      expect(scrapeSpy).not.toHaveBeenCalled();
+      expect(mockDependencies.logger.warn).toHaveBeenCalledWith(
+        '检测到失败URL已是已处理状态，跳过重试并清理失败记录',
+        { url: staleUrl }
+      );
+    });
   });
 
   describe('run', () => {

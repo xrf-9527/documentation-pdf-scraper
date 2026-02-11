@@ -1520,10 +1520,19 @@ export class Scraper extends EventEmitter {
 
     let retrySuccessCount = 0;
     let retryFailCount = 0;
+    let staleSkipCount = 0;
 
     for (const [url, errorInfo] of failedUrls) {
       try {
         this.logger.info(`重试失败的URL: ${url}`);
+
+        // 兜底保护：如果URL已在已处理集合中，说明失败记录是脏数据
+        if (this.stateManager.isProcessed(url)) {
+          staleSkipCount++;
+          this.logger.warn('检测到失败URL已是已处理状态，跳过重试并清理失败记录', { url });
+          this.stateManager.clearFailure(url);
+          continue;
+        }
 
         // 清除失败状态
         this.stateManager.clearFailure(url);
@@ -1552,6 +1561,7 @@ export class Scraper extends EventEmitter {
     this.logger.info('重试完成', {
       成功: retrySuccessCount,
       失败: retryFailCount,
+      跳过: staleSkipCount,
     });
 
     this.emit('retryCompleted', {
