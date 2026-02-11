@@ -132,10 +132,8 @@ describe('Application', () => {
           const config = await this.container.get('config');
 
           this.logger.info('🧹 Preparing PDF directory...');
-          await fileService.cleanDirectory(config.pdfDir);
           await fileService.ensureDirectory(config.pdfDir);
 
-          progressTracker.start();
           await scraper.run();
 
           const stats = progressTracker.getStats();
@@ -471,9 +469,8 @@ describe('Application', () => {
         },
       });
 
-      expect(mockFileService.cleanDirectory).toHaveBeenCalledWith('/test/pdf');
       expect(mockFileService.ensureDirectory).toHaveBeenCalledWith('/test/pdf');
-      expect(mockProgressTracker.start).toHaveBeenCalled();
+      expect(mockProgressTracker.start).not.toHaveBeenCalled();
       expect(mockScraper.run).toHaveBeenCalled();
     });
 

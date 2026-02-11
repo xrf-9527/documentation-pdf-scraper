@@ -114,9 +114,6 @@ class Application {
       // await fileService.cleanDirectory(config.pdfDir); // Don't clean on start to allow resume
       await fileService.ensureDirectory(config.pdfDir);
 
-      // 启动进度跟踪
-      progressTracker.start();
-
       // 执行爬虫任务
       await scraper.run();
 
