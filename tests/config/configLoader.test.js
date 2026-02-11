@@ -166,6 +166,66 @@ describe('ConfigLoader', () => {
       expect(config.pdfDir).toBe(path.resolve(process.cwd(), 'pdfs'));
       expect(config.allowedDomains).toContain('example.com');
     });
+
+    test('应该支持 openclaw 别名并合并 openclaw-zh-cn 配置', async () => {
+      const baseConfig = {
+        docTarget: 'openclaw',
+        pdfDir: 'pdfs',
+        concurrency: 5,
+      };
+      const targetConfig = {
+        rootURL: 'https://docs.openclaw.ai/zh-CN',
+        baseUrl: 'https://docs.openclaw.ai/zh-CN',
+        navLinksSelector: 'nav a',
+        contentSelector: '#content-area',
+      };
+
+      const targetPath = path.resolve(process.cwd(), 'doc-targets', 'openclaw-zh-cn.json');
+      const directPath = path.resolve(process.cwd(), 'doc-targets', 'openclaw.json');
+
+      fs.promises.access.mockImplementation(async (filePath) => {
+        if (filePath === configLoader.configPath || filePath === targetPath) {
+          return;
+        }
+        const error = new Error('ENOENT');
+        error.code = 'ENOENT';
+        throw error;
+      });
+
+      fs.promises.stat.mockImplementation(async (filePath) => {
+        if (filePath === configLoader.configPath || filePath === targetPath) {
+          return { isFile: () => true };
+        }
+        if (filePath === directPath) {
+          const error = new Error('ENOENT');
+          error.code = 'ENOENT';
+          throw error;
+        }
+        return { isFile: () => true };
+      });
+
+      fs.promises.readFile.mockImplementation(async (filePath) => {
+        if (filePath === configLoader.configPath) {
+          return JSON.stringify(baseConfig);
+        }
+        if (filePath === targetPath) {
+          return JSON.stringify(targetConfig);
+        }
+        throw new Error(`Unexpected readFile: ${filePath}`);
+      });
+
+      validateConfig.mockImplementation((config) => ({ config }));
+
+      const config = await configLoader.load();
+
+      expect(config.docTarget).toBe('openclaw');
+      expect(config.rootURL).toBe('https://docs.openclaw.ai/zh-CN');
+      expect(config.baseUrl).toBe('https://docs.openclaw.ai/zh-CN');
+      expect(config.navLinksSelector).toBe('nav a');
+      expect(config.contentSelector).toBe('#content-area');
+      expect(config.pdfDir).toBe(path.resolve(process.cwd(), 'pdfs'));
+      expect(config.allowedDomains).toContain('docs.openclaw.ai');
+    });
   });
 
   describe('processConfig', () => {
