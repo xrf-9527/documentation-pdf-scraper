@@ -65,6 +65,7 @@ describe('Scraper', () => {
         isProcessed: jest.fn().mockReturnValue(false),
         markProcessed: jest.fn(),
         markFailed: jest.fn(),
+        clearFailure: jest.fn(),
         setUrlIndex: jest.fn(),
         getFailedUrls: jest.fn().mockReturnValue([]),
         state: {
@@ -75,6 +76,7 @@ describe('Scraper', () => {
       progressTracker: {
         on: jest.fn(),
         start: jest.fn(),
+        startUrl: jest.fn(),
         skip: jest.fn(),
         success: jest.fn(),
         failure: jest.fn(),
@@ -382,7 +384,8 @@ describe('Scraper', () => {
       );
       expect(mockDependencies.progressTracker.failure).toHaveBeenCalledWith(
         testUrl,
-        expect.any(Error)
+        expect.any(Error),
+        true
       );
     });
 

@@ -1106,7 +1106,9 @@ export class Scraper extends EventEmitter {
   /**
    * 爬取单个页面 - 关键修改：使用数字索引命名
    */
-  async scrapePage(url, index) {
+  async scrapePage(url, index, options = {}) {
+    const { isRetry = false } = options;
+
     // 检查是否已处理
     if (this.stateManager.isProcessed(url)) {
       this.logger.debug(`跳过已处理的URL: ${url}`);
@@ -1119,6 +1121,7 @@ export class Scraper extends EventEmitter {
 
     try {
       this.logger.info(`开始爬取页面 [${index + 1}/${this.urlQueue.length}]: ${url}`);
+      this.progressTracker.startUrl?.(url);
 
       // 创建页面
       page = await this.pageManager.createPage(pageId);
@@ -1411,10 +1414,6 @@ export class Scraper extends EventEmitter {
       // 保存URL到索引的映射，用于追溯和调试
       this.stateManager.setUrlIndex(url, index);
 
-      // 标记为已处理 (use actual output path - markdown in batch mode, PDF otherwise)
-      this.stateManager.markProcessed(url, actualOutputPath);
-      this.progressTracker.success(url);
-
       // 清理并保存标题映射（使用字符串索引以匹配Python期望）
       const cleanedTitle = this._cleanTitle(title);
       if (cleanedTitle) {
@@ -1443,6 +1442,10 @@ export class Scraper extends EventEmitter {
           new Error(`Title extraction failed: source=${titleInfo.source}`)
         );
       }
+
+      // 标记为已处理 (use actual output path - markdown in batch mode, PDF otherwise)
+      this.stateManager.markProcessed(url, actualOutputPath);
+      this.progressTracker.success(url);
 
       // 定期保存状态
       const processedCount = this.progressTracker.getStats().processed;
@@ -1475,7 +1478,8 @@ export class Scraper extends EventEmitter {
 
       // 记录失败
       this.stateManager.markFailed(url, error);
-      this.progressTracker.failure(url, error);
+      const willRetry = this.config.retryFailedUrls !== false && !isRetry;
+      this.progressTracker.failure(url, error, willRetry);
 
       this.emit('pageScrapeFailed', {
         url,
@@ -1522,14 +1526,13 @@ export class Scraper extends EventEmitter {
         this.logger.info(`重试失败的URL: ${url}`);
 
         // 清除失败状态
-        this.stateManager.state.failedUrls.delete(url);
-        this.stateManager.state.processedUrls.delete(url);
+        this.stateManager.clearFailure(url);
 
         // 重新爬取
         const index = this.urlQueue.indexOf(url);
         const realIndex = index >= 0 ? index : this.urlQueue.length;
 
-        await this.scrapePage(url, realIndex);
+        await this.scrapePage(url, realIndex, { isRetry: true });
         retrySuccessCount++;
 
         // 重试间隔
