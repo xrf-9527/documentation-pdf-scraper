@@ -10,9 +10,6 @@ import { FileService } from '../src/services/fileService.js';
 import { PathService } from '../src/services/pathService.js';
 import { createLogger } from '../src/utils/logger.js';
 import fs from 'fs/promises';
-import path from 'path';
-
-const logger = createLogger('HierarchicalTOCTest');
 
 async function testConfigValidation() {
   console.log('\n📋 测试1: 配置验证 (sectionTitles)');
@@ -140,7 +137,9 @@ async function testMetadataService() {
     // 清理
     try {
       await fs.rm(tempDir, { recursive: true, force: true });
-    } catch {}
+    } catch (cleanupError) {
+      console.warn('⚠️ 清理临时目录失败:', cleanupError.message);
+    }
     return false;
   }
 }

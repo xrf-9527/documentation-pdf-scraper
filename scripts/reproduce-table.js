@@ -1,4 +1,3 @@
-
 import { PandocPdfService } from '../src/services/pandocPdfService.js';
 import path from 'path';
 import fs from 'fs';
@@ -18,35 +17,35 @@ const TABLE_MARKDOWN = `
 `;
 
 async function reproduce() {
-    if (!fs.existsSync(OUTPUT_DIR)) {
-        fs.mkdirSync(OUTPUT_DIR, { recursive: true });
-    }
+  if (!fs.existsSync(OUTPUT_DIR)) {
+    fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+  }
 
-    const outputPath = path.join(OUTPUT_DIR, 'reproduce_table.pdf');
-    const service = new PandocPdfService({
-        config: {
-            markdownPdf: {
-                highlightStyle: 'github',
-                pdfOptions: {
-                    format: 'A4',
-                    margin: '20mm'
-                }
-            }
+  const outputPath = path.join(OUTPUT_DIR, 'reproduce_table.pdf');
+  const service = new PandocPdfService({
+    config: {
+      markdownPdf: {
+        highlightStyle: 'github',
+        pdfOptions: {
+          format: 'A4',
+          margin: '20mm',
         },
-        logger: {
-            info: console.log,
-            error: console.error,
-            warn: console.warn
-        }
-    });
+      },
+    },
+    logger: {
+      info: console.log,
+      error: console.error,
+      warn: console.warn,
+    },
+  });
 
-    console.log('Generating PDF...');
-    try {
-        await service.convertContentToPdf(TABLE_MARKDOWN, outputPath);
-        console.log(`PDF generated at ${outputPath}`);
-    } catch (err) {
-        console.error('Failed to generate PDF:', err);
-    }
+  console.log('Generating PDF...');
+  try {
+    await service.convertContentToPdf(TABLE_MARKDOWN, outputPath);
+    console.log(`PDF generated at ${outputPath}`);
+  } catch (err) {
+    console.error('Failed to generate PDF:', err);
+  }
 }
 
 reproduce().catch(console.error);

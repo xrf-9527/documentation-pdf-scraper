@@ -482,7 +482,9 @@ const configSchema = Joi.object({
 
     batchMode: Joi.boolean()
       .default(false)
-      .description('When true, skip individual PDF generation and create final PDF directly from all markdown files'),
+      .description(
+        'When true, skip individual PDF generation and create final PDF directly from all markdown files'
+      ),
 
     stylesheet: Joi.string().optional().description('Custom CSS stylesheet for md-to-pdf'),
 
@@ -490,9 +492,7 @@ const configSchema = Joi.object({
       .default('github')
       .description('Code highlight theme for markdown PDF'),
 
-    toc: Joi.boolean()
-      .default(true)
-      .description('Include table of contents in PDF'),
+    toc: Joi.boolean().default(true).description('Include table of contents in PDF'),
 
     tocDepth: Joi.number()
       .integer()

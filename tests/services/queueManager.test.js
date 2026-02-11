@@ -119,9 +119,9 @@ describe('QueueManager', () => {
       const result = await queueManager.addTask('task1', fn);
 
       expect(result).toBe('result');
-      expect(queueManager.tasks.has('task1')).toBe(true);
+      expect(queueManager.tasks.has('task1')).toBe(false);
 
-      const task = queueManager.tasks.get('task1');
+      const task = queueManager.getTaskDetails('task1');
       expect(task.id).toBe('task1');
       expect(task.status).toBe('completed');
       expect(task.completedAt).toBeDefined();
@@ -133,7 +133,7 @@ describe('QueueManager', () => {
 
       await queueManager.addTask('task1', fn, { priority: 10 });
 
-      const task = queueManager.tasks.get('task1');
+      const task = queueManager.getTaskDetails('task1');
       expect(task.priority).toBe(10);
       expect(queueManager.queue.add).toHaveBeenCalledWith(expect.any(Function), { priority: 10 });
     });
@@ -187,8 +187,34 @@ describe('QueueManager', () => {
       resolveTask('done');
       await taskPromise;
 
-      const taskAfterCompletion = queueManager.tasks.get('task1');
+      const taskAfterCompletion = queueManager.getTaskDetails('task1');
       expect(taskAfterCompletion.duration).toBeGreaterThan(0);
+    });
+
+    test('任务完成后应从活动任务中移除，并可通过详情接口查询历史', async () => {
+      const fn = jest.fn().mockResolvedValue('result');
+
+      await queueManager.addTask('history-task', fn);
+
+      expect(queueManager.tasks.has('history-task')).toBe(false);
+      const task = queueManager.getTaskDetails('history-task');
+      expect(task).toBeDefined();
+      expect(task.status).toBe('completed');
+    });
+
+    test('应限制历史任务数量，超出时淘汰最旧记录', async () => {
+      const historyQueueManager = new QueueManager({
+        concurrency: 1,
+        maxTaskHistory: 2,
+      });
+
+      await historyQueueManager.addTask('task-1', async () => '1');
+      await historyQueueManager.addTask('task-2', async () => '2');
+      await historyQueueManager.addTask('task-3', async () => '3');
+
+      expect(historyQueueManager.getTaskDetails('task-1')).toBeUndefined();
+      expect(historyQueueManager.getTaskDetails('task-2')).toBeDefined();
+      expect(historyQueueManager.getTaskDetails('task-3')).toBeDefined();
     });
   });
 
@@ -210,9 +236,12 @@ describe('QueueManager', () => {
         reason: expect.objectContaining({ message: 'error3' }),
       });
 
-      expect(queueManager.tasks.has('task1')).toBe(true);
-      expect(queueManager.tasks.has('task2')).toBe(true);
-      expect(queueManager.tasks.has('task3')).toBe(true);
+      expect(queueManager.tasks.has('task1')).toBe(false);
+      expect(queueManager.tasks.has('task2')).toBe(false);
+      expect(queueManager.tasks.has('task3')).toBe(false);
+      expect(queueManager.getTaskDetails('task1').status).toBe('completed');
+      expect(queueManager.getTaskDetails('task2').status).toBe('completed');
+      expect(queueManager.getTaskDetails('task3').status).toBe('failed');
     });
 
     test('应该处理带选项的批量任务', async () => {
@@ -223,8 +252,8 @@ describe('QueueManager', () => {
 
       await queueManager.addBatch(tasks);
 
-      expect(queueManager.tasks.get('task1').priority).toBe(10);
-      expect(queueManager.tasks.get('task2').priority).toBe(5);
+      expect(queueManager.getTaskDetails('task1').priority).toBe(10);
+      expect(queueManager.getTaskDetails('task2').priority).toBe(5);
     });
   });
 
@@ -241,6 +270,7 @@ describe('QueueManager', () => {
       // 添加一些任务到内存
       queueManager.tasks.set('task1', { id: 'task1' });
       queueManager.tasks.set('task2', { id: 'task2' });
+      queueManager.taskHistory.set('task3', { id: 'task3', status: 'completed' });
 
       const clearedPromise = new Promise((resolve) => {
         queueManager.once('cleared', resolve);
@@ -250,6 +280,7 @@ describe('QueueManager', () => {
 
       expect(queueManager.queue.clear).toHaveBeenCalled();
       expect(queueManager.tasks.size).toBe(0);
+      expect(queueManager.taskHistory.size).toBe(0);
 
       return clearedPromise;
     });
@@ -282,10 +313,10 @@ describe('QueueManager', () => {
   describe('getStatus', () => {
     test('应该返回队列状态', async () => {
       // 添加一些任务
-      queueManager.tasks.set('task1', { status: 'completed' });
+      queueManager.taskHistory.set('task1', { status: 'completed' });
       queueManager.tasks.set('task2', { status: 'running' });
       queueManager.tasks.set('task3', { status: 'pending' });
-      queueManager.tasks.set('task4', { status: 'failed' });
+      queueManager.taskHistory.set('task4', { status: 'failed' });
 
       const status = queueManager.getStatus();
 
@@ -361,7 +392,7 @@ describe('QueueManager', () => {
       const result = await taskPromise;
 
       // 检查最终状态
-      task = queueManager.tasks.get('lifecycle-task');
+      task = queueManager.getTaskDetails('lifecycle-task');
       expect(task.status).toBe('completed');
       expect(task.startedAt).toBeDefined();
       expect(task.completedAt).toBeDefined();

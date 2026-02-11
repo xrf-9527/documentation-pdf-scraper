@@ -585,7 +585,7 @@ describe('ConfigValidator', () => {
 
       try {
         validateConfig(config);
-        fail('应该抛出验证错误');
+        throw new Error('应该抛出验证错误');
       } catch (error) {
         expect(error).toBeInstanceOf(ValidationError);
         expect(error.details.details).toBeDefined();

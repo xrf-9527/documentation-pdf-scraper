@@ -745,7 +745,9 @@ export class Scraper extends EventEmitter {
 
       const urls = rawUrls
         .map((href) => (typeof href === 'string' ? href.trim() : ''))
-        .filter((href) => href && !href.startsWith('#') && !href.toLowerCase().startsWith('javascript:'))
+        .filter(
+          (href) => href && !href.startsWith('#') && !href.toLowerCase().startsWith('javascript:')
+        )
         .map((href) => {
           try {
             const resolvedUrl = new URL(href, currentUrl);
@@ -975,7 +977,7 @@ export class Scraper extends EventEmitter {
       const response = await fetch(mdUrl, {
         headers: {
           'User-Agent': this.config.browser?.userAgent || 'Mozilla/5.0',
-          'Accept': 'text/markdown, text/plain, */*',
+          Accept: 'text/markdown, text/plain, */*',
         },
         signal: AbortSignal.timeout(this.config.pageTimeout || 30000),
       });

@@ -183,7 +183,10 @@ export class PandocPdfService {
 
     // 0.2 强制在表格前添加空行 (防止表格跟在文本后面被当成普通文本)
     // 查找: 非空行(不以|开头) + 换行 + 表格头(|...|) + 换行 + 分隔线(|---|)
-    cleaned = cleaned.replace(/(^[^|\n\r].*(?:\r?\n|\r))(\s*\|.*\|.*(?:\r?\n|\r)\s*\|[-: ]+\|)/gm, '$1\n$2');
+    cleaned = cleaned.replace(
+      /(^[^|\n\r].*(?:\r?\n|\r))(\s*\|.*\|.*(?:\r?\n|\r)\s*\|[-: ]+\|)/gm,
+      '$1\n$2'
+    );
 
     // 2. 修复代码块中一般的 React 属性 (key=value 或 key={value})
     // ```javascript filename="app.js" -> ```javascript
@@ -406,8 +409,9 @@ export class PandocPdfService {
       return [];
     }
 
-    const files = fs.readdirSync(dir)
-      .filter(f => f.endsWith('.md') || f.endsWith('_translated.md'));
+    const files = fs
+      .readdirSync(dir)
+      .filter((f) => f.endsWith('.md') || f.endsWith('_translated.md'));
 
     // Prefer translated files if available, otherwise use original
     const fileMap = new Map();
@@ -500,7 +504,8 @@ export class PandocPdfService {
         content = this._removeFrontmatter(content);
 
         // Get article title
-        const title = articleTitles[pageIndex] || this._extractTitleFromContent(content) || `Page ${pageIndex}`;
+        const title =
+          articleTitles[pageIndex] || this._extractTitleFromContent(content) || `Page ${pageIndex}`;
 
         // Strip leading title from content if it duplicates the injected title
         const cleanedContent = this._stripLeadingTitle(content, title);
@@ -525,7 +530,8 @@ export class PandocPdfService {
       let content = fs.readFileSync(filePath, 'utf8');
       content = this._removeFrontmatter(content);
 
-      const title = (index && articleTitles[index]) || this._extractTitleFromContent(content) || file;
+      const title =
+        (index && articleTitles[index]) || this._extractTitleFromContent(content) || file;
       const cleanedContent = this._stripLeadingTitle(content, title);
       parts.push(`\\newpage\n\n## ${title}\n\n${cleanedContent}\n`);
 
@@ -553,7 +559,8 @@ export class PandocPdfService {
       const prefix = file.split('-')[0];
       const index = /^\d+$/.test(prefix) ? String(parseInt(prefix, 10)) : null;
 
-      const title = (index && articleTitles[index]) || this._extractTitleFromContent(content) || file;
+      const title =
+        (index && articleTitles[index]) || this._extractTitleFromContent(content) || file;
       const cleanedContent = this._stripLeadingTitle(content, title);
 
       // Add with page break (first page doesn't need break)

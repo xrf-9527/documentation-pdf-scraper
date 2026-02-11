@@ -7,11 +7,11 @@ jest.mock('../../src/utils/url.js', () => ({
   getUrlHash: jest.fn((url) => 'a1b2c3d4'),
   extractSubfolder: jest.fn((url) => {
     if (url.includes('/app/')) {
-      const match = url.match(/\/app\/([^\/]+)/);
+      const match = url.match(/\/app\/([^/]+)/);
       return match ? { type: 'app', name: match[1] } : null;
     }
     if (url.includes('/pages/')) {
-      const match = url.match(/\/pages\/([^\/]+)/);
+      const match = url.match(/\/pages\/([^/]+)/);
       return match ? { type: 'pages', name: match[1] } : null;
     }
     return null;

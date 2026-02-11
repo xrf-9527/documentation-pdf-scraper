@@ -217,13 +217,8 @@ describe('PandocPdfService', () => {
 
     it('should handle mixed backtick lengths correctly', () => {
       const input =
-        '````markdown theme={null}\n' +
-        '```bash\n' +
-        'echo "hello"\n' +
-        '```\n' +
-        '````';
-      const expected =
-        '````markdown\n' + '```bash\n' + 'echo "hello"\n' + '```\n' + '````';
+        '````markdown theme={null}\n' + '```bash\n' + 'echo "hello"\n' + '```\n' + '````';
+      const expected = '````markdown\n' + '```bash\n' + 'echo "hello"\n' + '```\n' + '````';
       const result = service._cleanMarkdownContent(input);
       expect(result).toBe(expected);
     });

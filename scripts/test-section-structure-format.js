@@ -170,7 +170,7 @@ sampleSectionStructure.sections.forEach((section) => {
 });
 
 console.log('\n生成的TOC结构预览:');
-mockTOC.forEach((item, i) => {
+mockTOC.forEach((item) => {
   const indent = '  '.repeat(item.level - 1);
   console.log(`${indent}${item.level}. ${item.title}`);
 });

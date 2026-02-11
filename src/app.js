@@ -8,15 +8,20 @@ import { createLogger } from './utils/logger.js';
  * 提供完整的应用程序生命周期管理
  */
 class Application {
-  constructor() {
+  constructor(options = {}) {
+    const { setupSignalHandlers = true, processRef = process } = options;
+
     this.container = null;
     this.logger = createLogger('Application');
     this.pythonRunner = null;
     this.isShuttingDown = false;
     this.startTime = null;
+    this.processRef = processRef;
 
     // 绑定信号处理
-    this.setupSignalHandlers();
+    if (setupSignalHandlers) {
+      this.setupSignalHandlers();
+    }
   }
 
   /**
@@ -26,25 +31,25 @@ class Application {
     const signals = ['SIGINT', 'SIGTERM', 'SIGQUIT'];
 
     signals.forEach((signal) => {
-      process.on(signal, async () => {
+      this.processRef.on(signal, async () => {
         this.logger.info(`Received ${signal}, initiating graceful shutdown...`);
         await this.shutdown();
-        process.exit(0);
+        this.processRef.exit(0);
       });
     });
 
     // 处理未捕获的异常
-    process.on('uncaughtException', async (error) => {
+    this.processRef.on('uncaughtException', async (error) => {
       this.logger.error('Uncaught exception:', error);
       await this.shutdown();
-      process.exit(1);
+      this.processRef.exit(1);
     });
 
     // 处理未处理的Promise拒绝
-    process.on('unhandledRejection', async (reason, promise) => {
+    this.processRef.on('unhandledRejection', async (reason, promise) => {
       this.logger.error('Unhandled promise rejection:', { reason, promise });
       await this.shutdown();
-      process.exit(1);
+      this.processRef.exit(1);
     });
   }
 
@@ -194,7 +199,9 @@ class Application {
       let result;
       try {
         result = await pythonMergeService.mergePDFs(
-          targetDirectory ? { directory: targetDirectory, config: mergedConfigPath } : { config: mergedConfigPath }
+          targetDirectory
+            ? { directory: targetDirectory, config: mergedConfigPath }
+            : { config: mergedConfigPath }
         );
       } finally {
         try {
@@ -349,8 +356,8 @@ class Application {
       startTime: this.startTime,
       containerHealth: this.container ? getContainerHealth(this.container) : null,
       pythonProcesses: this.pythonRunner ? this.pythonRunner.getRunningProcesses() : [],
-      memoryUsage: process.memoryUsage(),
-      pid: process.pid,
+      memoryUsage: this.processRef.memoryUsage(),
+      pid: this.processRef.pid,
     };
   }
 
@@ -473,6 +480,9 @@ async function main() {
 export { Application, main };
 
 // 如果直接运行此文件，执行主函数
-if (import.meta.url === `file://${process.argv[1]}`) {
+const entryFilePath = process.argv[1] ? path.resolve(process.argv[1]) : null;
+const appFilePath = path.resolve(process.cwd(), 'src/app.js');
+
+if (entryFilePath === appFilePath) {
   main().catch(console.error);
 }

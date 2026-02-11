@@ -94,16 +94,18 @@ export class MarkdownService {
 
     const normalizeText = (text) => {
       if (!text) return '';
-      return text
-        .trim()
-        // 去掉首尾的强调符号（_ 或 *）
-        .replace(/^[*_]+/, '')
-        .replace(/[*_]+$/, '')
-        .trim()
-        // 去掉结尾的句号/感叹号等常见标点
-        .replace(/[。．.!！]+$/u, '')
-        .trim()
-        .toLowerCase();
+      return (
+        text
+          .trim()
+          // 去掉首尾的强调符号（_ 或 *）
+          .replace(/^[*_]+/, '')
+          .replace(/[*_]+$/, '')
+          .trim()
+          // 去掉结尾的句号/感叹号等常见标点
+          .replace(/[。．.!！]+$/u, '')
+          .trim()
+          .toLowerCase()
+      );
     };
 
     const result = [];

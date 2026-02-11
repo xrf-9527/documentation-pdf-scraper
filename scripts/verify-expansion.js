@@ -6,7 +6,6 @@
 
 import puppeteer from 'puppeteer-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
-import fs from 'fs';
 
 puppeteer.use(StealthPlugin());
 

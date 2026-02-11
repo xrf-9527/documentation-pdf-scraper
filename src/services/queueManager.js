@@ -12,6 +12,10 @@ export class QueueManager extends EventEmitter {
       intervalCap: options.intervalCap || 5,
       timeout: options.timeout || 30000,
       throwOnTimeout: options.throwOnTimeout || false,
+      maxTaskHistory:
+        Number.isInteger(options.maxTaskHistory) && options.maxTaskHistory >= 0
+          ? options.maxTaskHistory
+          : 100,
       ...options,
     };
 
@@ -24,6 +28,7 @@ export class QueueManager extends EventEmitter {
     });
 
     this.tasks = new Map();
+    this.taskHistory = new Map();
     this.setupEventHandlers();
   }
 
@@ -61,6 +66,8 @@ export class QueueManager extends EventEmitter {
    * 添加任务
    */
   async addTask(id, fn, options = {}) {
+    this.taskHistory.delete(id);
+
     const task = {
       id,
       fn,
@@ -88,6 +95,9 @@ export class QueueManager extends EventEmitter {
         task.failedAt = Date.now();
         this.emit('taskFailed', { id, error, task });
         throw error;
+      } finally {
+        this.tasks.delete(id);
+        this.recordTaskHistory(task);
       }
     };
 
@@ -115,6 +125,7 @@ export class QueueManager extends EventEmitter {
   clear() {
     this.queue.clear();
     this.tasks.clear();
+    this.taskHistory.clear();
     this.emit('cleared');
   }
 
@@ -138,17 +149,20 @@ export class QueueManager extends EventEmitter {
    * 获取队列状态
    */
   getStatus() {
+    const activeTasks = Array.from(this.tasks.values());
+    const historyTasks = Array.from(this.taskHistory.values());
+
     return {
       size: this.queue.size,
       pending: this.queue.pending,
       isPaused: this.queue.isPaused,
       concurrency: this.options.concurrency,
       tasks: {
-        total: this.tasks.size,
-        pending: Array.from(this.tasks.values()).filter((t) => t.status === 'pending').length,
-        running: Array.from(this.tasks.values()).filter((t) => t.status === 'running').length,
-        completed: Array.from(this.tasks.values()).filter((t) => t.status === 'completed').length,
-        failed: Array.from(this.tasks.values()).filter((t) => t.status === 'failed').length,
+        total: activeTasks.length + historyTasks.length,
+        pending: activeTasks.filter((t) => t.status === 'pending').length,
+        running: activeTasks.filter((t) => t.status === 'running').length,
+        completed: historyTasks.filter((t) => t.status === 'completed').length,
+        failed: historyTasks.filter((t) => t.status === 'failed').length,
       },
     };
   }
@@ -157,7 +171,7 @@ export class QueueManager extends EventEmitter {
    * 获取任务详情
    */
   getTaskDetails(id) {
-    return this.tasks.get(id);
+    return this.tasks.get(id) || this.taskHistory.get(id);
   }
 
   /**
@@ -167,5 +181,18 @@ export class QueueManager extends EventEmitter {
     this.options.concurrency = concurrency;
     this.queue.concurrency = concurrency;
     this.emit('concurrency-changed', { concurrency });
+  }
+
+  recordTaskHistory(task) {
+    if (this.options.maxTaskHistory <= 0) {
+      return;
+    }
+
+    this.taskHistory.set(task.id, { ...task });
+
+    while (this.taskHistory.size > this.options.maxTaskHistory) {
+      const oldestTaskId = this.taskHistory.keys().next().value;
+      this.taskHistory.delete(oldestTaskId);
+    }
   }
 }

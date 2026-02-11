@@ -10,8 +10,8 @@
     "clean": "rm -rf pdfs/*/ pdfs/finalPdf/* pdfs/metadata/*",
     "test": "jest tests/",
     "test:watch": "jest --watch tests/",
-    "lint": "eslint 'src/**/*.js'",
-    "lint:fix": "eslint 'src/**/*.js' --fix",
+    "lint": "eslint \"{src,tests,scripts}/**/*.js\"",
+    "lint:fix": "eslint \"{src,tests,scripts}/**/*.js\" --fix",
     "format": "prettier --write \"{src,tests,scripts}/**/*.{js,mjs,cjs,md,json,yml,yaml}\"",
     "format:check": "prettier --check \"{src,tests,scripts}/**/*.{js,mjs,cjs,md,json,yml,yaml}\"",
     "docs:openai": "node scripts/use-doc-target.js use openai",
@@ -22,7 +22,8 @@
     "docs:anthropic": "node scripts/use-doc-target.js use anthropic-research",
     "docs:claude-blog": "node scripts/use-doc-target.js use claude-blog",
     "docs:openclaw:update-urls": "node scripts/update-openclaw-target-urls.js",
-    "docs:openclaw:verify": "node scripts/verify-openclaw-target-coverage.js"
+    "docs:openclaw:verify": "node scripts/verify-openclaw-target-coverage.js",
+    "docs:openclaw:verify:warn": "OPENCLAW_VERIFY_ALLOW_FETCH_FAILURE=1 OPENCLAW_VERIFY_WARN_ONLY=1 node scripts/verify-openclaw-target-coverage.js"
   },
   "keywords": [
     "scraper",

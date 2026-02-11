@@ -6,7 +6,7 @@ VENV_PYTHON = $(VENV_DIR)/bin/python
 VENV_PIP = $(VENV_DIR)/bin/pip
 NODE_MODULES = node_modules
 
-.PHONY: help install install-python install-node venv clean-venv clean clean-all clean-cache run run-clean test demo lint lint-fix ci verify-openclaw check-venv python-info kindle7 kindle-paperwhite kindle-oasis kindle-scribe kindle-all reset-config list-configs clean-kindle docs-openai docs-claude docs-openclaw docs-cloudflare docs-anthropic docs-53ai docs-claude-blog docs-current
+.PHONY: help install install-python install-node venv clean-venv clean clean-all clean-cache run run-clean test demo lint lint-fix ci verify-openclaw verify-openclaw-ci check-venv python-info kindle7 kindle-paperwhite kindle-oasis kindle-scribe kindle-all reset-config list-configs clean-kindle docs-openai docs-claude docs-openclaw docs-cloudflare docs-anthropic docs-53ai docs-claude-blog docs-current
 
 help:
 	@echo "Available commands:"
@@ -20,7 +20,7 @@ help:
 	@echo "  test          - Run tests"
 	@echo "  lint          - Run linter"
 	@echo "  verify-openclaw - Verify openclaw zh-CN targetUrls coverage against sitemap"
-	@echo "  ci            - Run CI checks (test + lint + verify-openclaw)"
+	@echo "  ci            - Run CI checks (test + lint + verify-openclaw-ci)"
 	@echo "  clean         - Clean generated PDFs and metadata"
 	@echo "  clean-cache   - Clean translation cache and metadata (keep PDFs)"
 	@echo "  clean-all     - Clean everything including dependencies"
@@ -118,8 +118,13 @@ verify-openclaw:
 	@echo "Verifying OpenClaw zh-CN target URL coverage..."
 	npm run docs:openclaw:verify
 
+# Verify OpenClaw zh-CN target URLs coverage (allow network fetch failures in CI)
+verify-openclaw-ci:
+	@echo "Verifying OpenClaw zh-CN target URL coverage (CI mode)..."
+	OPENCLAW_VERIFY_ALLOW_FETCH_FAILURE=1 npm run docs:openclaw:verify
+
 # CI checks
-ci: test lint verify-openclaw
+ci: test lint verify-openclaw-ci
 	@echo "✅ CI checks passed"
 
 # Fix linting issues
@@ -175,47 +180,63 @@ DOC_TARGET_SCRIPT = scripts/use-doc-target.js
 
 # Generate PDFs for Kindle 7-inch
 kindle7:
-	@echo "🔧 切换到Kindle 7英寸配置..."
-	@node $(CONFIG_SCRIPT) use kindle7
-	@echo "🧹 清理旧文件..."
-	@rm -rf pdfs/finalPdf-kindle7
-	@echo "📄 生成Kindle 7英寸优化PDF..."
-	@node src/app.js
-	@echo "✅ Kindle 7英寸PDF生成完成"
-	@echo "📍 PDF位置: pdfs/finalPdf-kindle7/"
+	@set -e; \
+	backup_file=$$(mktemp); \
+	cp config.json "$$backup_file"; \
+	trap 'cp "$$backup_file" config.json >/dev/null 2>&1; rm -f "$$backup_file"' EXIT; \
+	echo "🔧 切换到Kindle 7英寸配置..."; \
+	node $(CONFIG_SCRIPT) use kindle7; \
+	echo "🧹 清理旧文件..."; \
+	rm -rf pdfs/finalPdf-kindle7; \
+	echo "📄 生成Kindle 7英寸优化PDF..."; \
+	node src/app.js; \
+	echo "✅ Kindle 7英寸PDF生成完成"; \
+	echo "📍 PDF位置: pdfs/finalPdf-kindle7/"
 
 # Generate PDFs for Kindle Paperwhite
 kindle-paperwhite:
-	@echo "🔧 切换到Kindle Paperwhite配置..."
-	@node $(CONFIG_SCRIPT) use paperwhite
-	@echo "🧹 清理旧文件..."
-	@rm -rf pdfs/finalPdf-paperwhite
-	@echo "📄 生成Kindle Paperwhite优化PDF..."
-	@node src/app.js
-	@echo "✅ Kindle Paperwhite PDF生成完成"
-	@echo "📍 PDF位置: pdfs/finalPdf-paperwhite/"
+	@set -e; \
+	backup_file=$$(mktemp); \
+	cp config.json "$$backup_file"; \
+	trap 'cp "$$backup_file" config.json >/dev/null 2>&1; rm -f "$$backup_file"' EXIT; \
+	echo "🔧 切换到Kindle Paperwhite配置..."; \
+	node $(CONFIG_SCRIPT) use paperwhite; \
+	echo "🧹 清理旧文件..."; \
+	rm -rf pdfs/finalPdf-paperwhite; \
+	echo "📄 生成Kindle Paperwhite优化PDF..."; \
+	node src/app.js; \
+	echo "✅ Kindle Paperwhite PDF生成完成"; \
+	echo "📍 PDF位置: pdfs/finalPdf-paperwhite/"
 
 # Generate PDFs for Kindle Oasis
 kindle-oasis:
-	@echo "🔧 切换到Kindle Oasis配置..."
-	@node $(CONFIG_SCRIPT) use oasis
-	@echo "🧹 清理旧文件..."
-	@rm -rf pdfs/finalPdf-oasis
-	@echo "📄 生成Kindle Oasis优化PDF..."
-	@node src/app.js
-	@echo "✅ Kindle Oasis PDF生成完成"
-	@echo "📍 PDF位置: pdfs/finalPdf-oasis/"
+	@set -e; \
+	backup_file=$$(mktemp); \
+	cp config.json "$$backup_file"; \
+	trap 'cp "$$backup_file" config.json >/dev/null 2>&1; rm -f "$$backup_file"' EXIT; \
+	echo "🔧 切换到Kindle Oasis配置..."; \
+	node $(CONFIG_SCRIPT) use oasis; \
+	echo "🧹 清理旧文件..."; \
+	rm -rf pdfs/finalPdf-oasis; \
+	echo "📄 生成Kindle Oasis优化PDF..."; \
+	node src/app.js; \
+	echo "✅ Kindle Oasis PDF生成完成"; \
+	echo "📍 PDF位置: pdfs/finalPdf-oasis/"
 
 # Generate PDFs for Kindle Scribe
 kindle-scribe:
-	@echo "🔧 切换到Kindle Scribe配置..."
-	@node $(CONFIG_SCRIPT) use scribe
-	@echo "🧹 清理旧文件..."
-	@rm -rf pdfs/finalPdf-scribe
-	@echo "📄 生成Kindle Scribe优化PDF..."
-	@node src/app.js
-	@echo "✅ Kindle Scribe PDF生成完成"
-	@echo "📍 PDF位置: pdfs/finalPdf-scribe/"
+	@set -e; \
+	backup_file=$$(mktemp); \
+	cp config.json "$$backup_file"; \
+	trap 'cp "$$backup_file" config.json >/dev/null 2>&1; rm -f "$$backup_file"' EXIT; \
+	echo "🔧 切换到Kindle Scribe配置..."; \
+	node $(CONFIG_SCRIPT) use scribe; \
+	echo "🧹 清理旧文件..."; \
+	rm -rf pdfs/finalPdf-scribe; \
+	echo "📄 生成Kindle Scribe优化PDF..."; \
+	node src/app.js; \
+	echo "✅ Kindle Scribe PDF生成完成"; \
+	echo "📍 PDF位置: pdfs/finalPdf-scribe/"
 
 # Generate PDFs for all Kindle devices
 kindle-all: kindle7 kindle-paperwhite kindle-oasis kindle-scribe

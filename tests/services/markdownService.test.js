@@ -25,8 +25,7 @@ describe('MarkdownService', () => {
 
   test('convertHtmlToMarkdown 应该使用 * 而不是 _ 作为强调符号', () => {
     const service = new MarkdownService({ logger });
-    const html =
-      '<p>One person said that iterating with Claude has been <em>more</em> fun.</p>';
+    const html = '<p>One person said that iterating with Claude has been <em>more</em> fun.</p>';
 
     const markdown = service.convertHtmlToMarkdown(html);
 

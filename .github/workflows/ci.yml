@@ -39,3 +39,7 @@ jobs:
 
       - name: Run CI Checks
         run: make ci
+
+      - name: Format Check (advisory)
+        run: npm run format:check
+        continue-on-error: true

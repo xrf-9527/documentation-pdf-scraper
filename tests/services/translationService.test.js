@@ -9,7 +9,7 @@ jest.mock('p-limit', () => {
     const limit = (fn, ...args) => fn(...args);
     limit.activeCount = 0;
     limit.pendingCount = 0;
-    limit.clearQueue = () => { };
+    limit.clearQueue = () => {};
     return limit;
   });
 });
@@ -74,13 +74,19 @@ describe('TranslationService', () => {
     expect(bilingualKey).not.toBe(key1);
   });
 
-  test('_saveToCache 和 _getFromCache 应该能正确读写缓存', () => {
+  test('_saveToCache 和 _getFromCache 应该能正确读写缓存', async () => {
     const service = new TranslationService({ config: baseConfig, logger });
     const text = 'Some text';
     const translation = '某些文本';
 
-    service._saveToCache(text, translation);
-    const cached = service._getFromCache(text);
+    const saveResult = service._saveToCache(text, translation);
+    const readResult = service._getFromCache(text);
+
+    expect(saveResult).toBeInstanceOf(Promise);
+    expect(readResult).toBeInstanceOf(Promise);
+
+    await saveResult;
+    const cached = await service._getFromCache(text);
 
     expect(cached).toBe(translation);
   });
@@ -242,9 +248,8 @@ describe('TranslationService', () => {
     const translated = await service.translateMarkdown(markdown);
 
     // 图片行应当只出现一次，不应生成第二个 `![]()`
-    const imageOccurrences = (
-      translated.match(/!\[Figure 1: Caption here]\(\/image\.png\)/g) || []
-    ).length;
+    const imageOccurrences = (translated.match(/!\[Figure 1: Caption here]\(\/image\.png\)/g) || [])
+      .length;
     expect(imageOccurrences).toBe(1);
 
     // 段落仍然应被翻译（双语模式：原文 + 译文）

@@ -58,7 +58,9 @@ export class TranslationService {
 
     // Cache directory
     this.cacheDir = this._resolveCacheDir();
-    this._ensureCacheDir();
+    this.cacheMemory = new Map();
+    this.cacheWriteQueue = Promise.resolve();
+    this.cacheInitPromise = this._ensureCacheDir();
   }
 
   _resolveCacheDir() {
@@ -68,10 +70,8 @@ export class TranslationService {
     return path.join(process.cwd(), '.temp', 'translation_cache');
   }
 
-  _ensureCacheDir() {
-    if (!fs.existsSync(this.cacheDir)) {
-      fs.mkdirSync(this.cacheDir, { recursive: true });
-    }
+  async _ensureCacheDir() {
+    await fs.promises.mkdir(this.cacheDir, { recursive: true });
   }
 
   /**
@@ -109,34 +109,57 @@ export class TranslationService {
     return crypto.createHash('md5').update(keyBase).digest('hex');
   }
 
-  _getFromCache(text) {
+  async _getFromCache(text) {
     const key = this._getCacheKey(text);
+    if (this.cacheMemory.has(key)) {
+      return this.cacheMemory.get(key);
+    }
+
     const cachePath = path.join(this.cacheDir, `${key}.json`);
-    if (fs.existsSync(cachePath)) {
-      try {
-        const data = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
-        return data.translation;
-      } catch {
+
+    try {
+      await this.cacheInitPromise;
+      const data = JSON.parse(await fs.promises.readFile(cachePath, 'utf8'));
+      this.cacheMemory.set(key, data.translation);
+      return data.translation;
+    } catch (error) {
+      if (error && error.code === 'ENOENT') {
         return null;
       }
+
+      this.logger.warn('Failed to read from cache', { error: error.message });
+      return null;
     }
-    return null;
   }
 
-  _saveToCache(text, translation) {
+  async _saveToCache(text, translation) {
     const key = this._getCacheKey(text);
     const cachePath = path.join(this.cacheDir, `${key}.json`);
+    this.cacheMemory.set(key, translation);
+
+    const payload = JSON.stringify({
+      original: text,
+      translation,
+      timestamp: Date.now(),
+    });
+
+    const writeTask = async () => {
+      await this.cacheInitPromise;
+      await fs.promises.writeFile(cachePath, payload);
+    };
+
+    this.cacheWriteQueue = this.cacheWriteQueue.then(writeTask).catch((error) => {
+      this.logger.warn('Failed to write to cache', { error: error.message });
+    });
+
+    return this.cacheWriteQueue;
+  }
+
+  async _flushCacheWrites() {
     try {
-      fs.writeFileSync(
-        cachePath,
-        JSON.stringify({
-          original: text,
-          translation,
-          timestamp: Date.now(),
-        })
-      );
-    } catch (e) {
-      this.logger.warn('Failed to write to cache', { error: e.message });
+      await this.cacheWriteQueue;
+    } catch {
+      // Errors are handled in _saveToCache to keep translation flow resilient.
     }
   }
 
@@ -220,7 +243,7 @@ export class TranslationService {
       const cachedTranslations = {};
 
       for (const item of elementsToTranslate) {
-        const cached = this._getFromCache(item.text);
+        const cached = await this._getFromCache(item.text);
         if (cached) {
           cachedTranslations[item.id] = cached;
         } else {
@@ -276,13 +299,15 @@ export class TranslationService {
               const res = await Promise.race([translatePromise, timeoutPromise]);
 
               if (res) {
+                const cacheWriteTasks = [];
                 Object.entries(res).forEach(([id, text]) => {
                   const originalItem = batch.find((item) => item.id === id);
                   if (originalItem) {
-                    this._saveToCache(originalItem.text, text);
+                    cacheWriteTasks.push(this._saveToCache(originalItem.text, text));
                     cachedTranslations[id] = text;
                   }
                 });
+                await Promise.all(cacheWriteTasks);
               }
 
               completedBatches++;
@@ -492,7 +517,7 @@ export class TranslationService {
     const uncachedSegments = [];
 
     for (const seg of segments) {
-      const cached = this._getFromCache(seg.text);
+      const cached = await this._getFromCache(seg.text);
       if (cached) {
         cachedTranslations[seg.id] = cached;
       } else {
@@ -557,13 +582,15 @@ export class TranslationService {
             }
 
             if (res) {
+              const cacheWriteTasks = [];
               Object.entries(res).forEach(([id, translated]) => {
                 const originalItem = batch.find((item) => item.id === id);
                 if (originalItem) {
-                  this._saveToCache(originalItem.text, translated);
+                  cacheWriteTasks.push(this._saveToCache(originalItem.text, translated));
                   cachedTranslations[id] = translated;
                 }
               });
+              await Promise.all(cacheWriteTasks);
             }
 
             completedBatches++;
@@ -626,7 +653,7 @@ export class TranslationService {
       const uncachedCaptionSegs = [];
 
       for (const cap of imageCaptions) {
-        const cached = this._getFromCache(cap.altText);
+        const cached = await this._getFromCache(cap.altText);
         if (cached) {
           captionTranslations[cap.id] = cached;
         } else if (cap.altText) {
@@ -638,13 +665,15 @@ export class TranslationService {
         try {
           const result = await this._translateBatchWithRetry(uncachedCaptionSegs);
           if (result) {
+            const cacheWriteTasks = [];
             Object.entries(result).forEach(([id, translated]) => {
               const originalItem = uncachedCaptionSegs.find((item) => item.id === id);
               if (originalItem) {
-                this._saveToCache(originalItem.text, translated);
+                cacheWriteTasks.push(this._saveToCache(originalItem.text, translated));
               }
               captionTranslations[id] = translated;
             });
+            await Promise.all(cacheWriteTasks);
           }
         } catch (err) {
           this.logger.warn('Image caption translation failed, will use original captions', {

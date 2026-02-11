@@ -2,65 +2,31 @@
 
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 import { extractTargetUrlsFromSitemap } from '../src/utils/sitemapTargetBuilder.js';
+import {
+  DEFAULT_ORIGIN,
+  DEFAULT_PATH_PREFIX,
+  buildCoverageReport,
+  normalizeTargetUrls,
+  resolveVerificationMode,
+} from '../src/utils/openclawCoverage.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
 
 const DEFAULT_SITEMAP_URL = 'https://docs.openclaw.ai/sitemap.xml';
-const DEFAULT_ORIGIN = 'https://docs.openclaw.ai';
-const DEFAULT_PATH_PREFIX = '/zh-CN';
 const DEFAULT_TARGET_PATH = path.join(rootDir, 'doc-targets', 'openclaw-zh-cn.json');
 
 function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, 'utf8'));
 }
 
-function normalizeUrl(url) {
-  const parsed = new URL(url);
-  parsed.hash = '';
-  parsed.search = '';
-  if (parsed.pathname.length > 1 && parsed.pathname.endsWith('/')) {
-    parsed.pathname = parsed.pathname.slice(0, -1);
-  }
-  return parsed.toString();
-}
-
-function normalizeTargetUrls(rawUrls) {
-  const result = [];
-  const seen = new Set();
-
-  for (const rawUrl of rawUrls) {
-    if (typeof rawUrl !== 'string' || !rawUrl.trim()) {
-      continue;
-    }
-
-    let normalized = null;
-    try {
-      normalized = normalizeUrl(rawUrl.trim());
-    } catch {
-      continue;
-    }
-
-    if (!normalized.startsWith(`${DEFAULT_ORIGIN}${DEFAULT_PATH_PREFIX}`)) {
-      continue;
-    }
-
-    if (!seen.has(normalized)) {
-      seen.add(normalized);
-      result.push(normalized);
-    }
-  }
-
-  return result;
-}
-
 async function fetchSitemapXml(url) {
   const response = await fetch(url, {
     headers: {
       'User-Agent': 'documentation-pdf-scraper/2.0',
-      'Accept': 'application/xml, text/xml, */*',
+      Accept: 'application/xml, text/xml, */*',
     },
     signal: AbortSignal.timeout(30000),
   });
@@ -73,45 +39,68 @@ async function fetchSitemapXml(url) {
 }
 
 async function main() {
-  const sitemapXml = await fetchSitemapXml(DEFAULT_SITEMAP_URL);
-  const sitemapUrls = extractTargetUrlsFromSitemap(sitemapXml, {
-    origin: DEFAULT_ORIGIN,
-    pathPrefix: DEFAULT_PATH_PREFIX,
+  const mode = resolveVerificationMode({
+    argv: process.argv.slice(2),
+    env: process.env,
   });
 
   const config = readJson(DEFAULT_TARGET_PATH);
-  const targetUrls = normalizeTargetUrls(Array.isArray(config.targetUrls) ? config.targetUrls : []);
+  const targetUrls = normalizeTargetUrls(
+    Array.isArray(config.targetUrls) ? config.targetUrls : [],
+    {
+      origin: DEFAULT_ORIGIN,
+      pathPrefix: DEFAULT_PATH_PREFIX,
+    }
+  );
 
-  const sitemapSet = new Set(sitemapUrls);
-  const targetSet = new Set(targetUrls);
+  let sitemapUrls = [];
+  try {
+    const sitemapXml = await fetchSitemapXml(DEFAULT_SITEMAP_URL);
+    sitemapUrls = extractTargetUrlsFromSitemap(sitemapXml, {
+      origin: DEFAULT_ORIGIN,
+      pathPrefix: DEFAULT_PATH_PREFIX,
+    });
+  } catch (error) {
+    if (!mode.allowFetchFailure) {
+      throw error;
+    }
 
-  const missing = sitemapUrls.filter((url) => !targetSet.has(url));
-  const extra = targetUrls.filter((url) => !sitemapSet.has(url));
+    console.warn(`⚠️ OpenClaw coverage check skipped due to fetch failure: ${error.message}`);
+    return;
+  }
+
+  const report = buildCoverageReport({ sitemapUrls, targetUrls });
 
   console.log('OpenClaw zh-CN coverage verification');
-  console.log(`- Sitemap URLs: ${sitemapUrls.length}`);
-  console.log(`- Target URLs : ${targetUrls.length}`);
-  console.log(`- Missing     : ${missing.length}`);
-  console.log(`- Extra       : ${extra.length}`);
+  console.log(`- Sitemap URLs: ${report.sitemapCount}`);
+  console.log(`- Target URLs : ${report.targetCount}`);
+  console.log(`- Missing     : ${report.missing.length}`);
+  console.log(`- Extra       : ${report.extra.length}`);
 
-  if (missing.length > 0) {
+  if (report.missing.length > 0) {
     console.log('\nMissing URLs sample:');
-    missing.slice(0, 20).forEach((url) => console.log(`  - ${url}`));
+    report.missing.slice(0, 20).forEach((url) => console.log(`  - ${url}`));
   }
 
-  if (extra.length > 0) {
+  if (report.extra.length > 0) {
     console.log('\nExtra URLs sample:');
-    extra.slice(0, 20).forEach((url) => console.log(`  - ${url}`));
+    report.extra.slice(0, 20).forEach((url) => console.log(`  - ${url}`));
   }
 
-  if (missing.length > 0 || extra.length > 0) {
+  if (report.missing.length > 0 || report.extra.length > 0) {
+    if (mode.warnOnly) {
+      console.warn('\n⚠️ Coverage mismatch detected in warn-only mode.');
+      return;
+    }
     process.exit(1);
   }
 
   console.log('\nCoverage verification passed.');
 }
 
-main().catch((error) => {
-  console.error(`Coverage verification failed: ${error.message}`);
-  process.exit(1);
-});
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error) => {
+    console.error(`Coverage verification failed: ${error.message}`);
+    process.exit(1);
+  });
+}

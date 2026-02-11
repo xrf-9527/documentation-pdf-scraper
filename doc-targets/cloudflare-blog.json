@@ -2,7 +2,7 @@
     "rootURL": "https://blog.cloudflare.com/",
     "baseUrl": "https://blog.cloudflare.com/",
     "navLinksSelector": "a.fw5.no-underline.gray1",
-    "paginationSelector": "a[href^=\"/page/\"], a:contains(\"Older Posts\")",
+    "paginationSelector": "a[href^=\"/page/\"], a[href*=\"/page/\"]",
     "contentSelector": "div.post-content",
     "allowedDomains": [
         "blog.cloudflare.com"

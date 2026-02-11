@@ -25,7 +25,7 @@ async function fetchSitemapXml(url) {
   const response = await fetch(url, {
     headers: {
       'User-Agent': 'documentation-pdf-scraper/2.0',
-      'Accept': 'application/xml, text/xml, */*',
+      Accept: 'application/xml, text/xml, */*',
     },
     signal: AbortSignal.timeout(30000),
   });
