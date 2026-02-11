@@ -38,6 +38,7 @@ help:
 	@echo "Doc targets:"
 	@echo "  docs-openai       - Apply OpenAI docs configuration"
 	@echo "  docs-claude       - Apply Claude Code docs configuration"
+	@echo "  docs-openclaw     - Apply OpenClaw zh-CN docs configuration"
 	@echo "  docs-cloudflare   - Apply Cloudflare Blog configuration"
 	@echo "  docs-anthropic    - Apply Anthropic Research configuration"
 	@echo "  docs-53ai         - Apply 53ai configuration"
