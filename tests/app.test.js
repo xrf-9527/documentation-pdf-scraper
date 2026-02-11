@@ -453,6 +453,11 @@ describe('Application', () => {
       await app.initialize();
     });
 
+    it('runScraping should not call progressTracker.start directly', async () => {
+      await app.runScraping();
+      expect(mockProgressTracker.start).not.toHaveBeenCalled();
+    });
+
     it('should run scraping successfully', async () => {
       const result = await app.runScraping();
 

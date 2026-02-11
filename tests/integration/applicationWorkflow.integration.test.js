@@ -128,7 +128,7 @@ describe('Application minimal workflow integration', () => {
       const result = await app.run();
 
       expect(scraper.run).toHaveBeenCalledTimes(1);
-      expect(progressTracker.start).toHaveBeenCalledTimes(1);
+      expect(progressTracker.start).not.toHaveBeenCalled();
       expect(fileService.ensureDirectory).toHaveBeenCalledWith(pdfDir);
       expect(pythonMergeService.mergePDFs).toHaveBeenCalledTimes(1);
       expect(result.scraping.success).toBe(true);

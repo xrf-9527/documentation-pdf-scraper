@@ -404,6 +404,32 @@ describe('Scraper', () => {
       expect(mockDependencies.pageManager.closePage).toHaveBeenCalledWith('scraper-page-0');
     });
 
+    it('should not mark URL success before title persistence succeeds', async () => {
+      mockDependencies.metadataService.saveArticleTitle.mockRejectedValueOnce(new Error('write fail'));
+
+      await expect(scraper.scrapePage('https://example.com/page1', 0)).rejects.toThrow(NetworkError);
+
+      expect(mockDependencies.stateManager.markProcessed).not.toHaveBeenCalled();
+      expect(mockDependencies.progressTracker.success).not.toHaveBeenCalled();
+      expect(mockDependencies.progressTracker.failure).toHaveBeenCalled();
+    });
+
+    it('should mark first-pass failure as pending-retry when retries are enabled', async () => {
+      const err = new Error('boom');
+      mockPage.goto.mockRejectedValue(err);
+      scraper.config.retryFailedUrls = true;
+
+      await expect(
+        scraper.scrapePage('https://example.com/page1', 0, { isRetry: false })
+      ).rejects.toThrow();
+
+      expect(mockDependencies.progressTracker.failure).toHaveBeenCalledWith(
+        'https://example.com/page1',
+        expect.any(Error),
+        true
+      );
+    });
+
     it('should save state periodically', async () => {
       mockDependencies.progressTracker.getStats.mockReturnValue({ processed: 10 });
 

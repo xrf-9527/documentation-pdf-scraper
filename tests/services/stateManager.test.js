@@ -305,6 +305,16 @@ describe('StateManager', () => {
       });
     });
 
+    test('markFailed should remove URL from processed set to avoid negative pending', () => {
+      stateManager.markProcessed('url-1');
+      stateManager.markFailed('url-1', new Error('x'));
+
+      const stats = stateManager.getStats();
+      expect(stats.processed).toBe(0);
+      expect(stats.failed).toBe(1);
+      expect(stats.pending).toBeGreaterThanOrEqual(0);
+    });
+
     test('getFailedUrls应该返回失败URL列表', () => {
       stateManager.state.failedUrls.set('url1', 'Error 1');
       stateManager.state.failedUrls.set('url2', 'Error 2');
