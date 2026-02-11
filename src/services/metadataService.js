@@ -11,9 +11,15 @@ export class MetadataService {
    */
   async saveArticleTitle(index, title) {
     const filePath = this.pathService.getMetadataPath('articleTitles');
-    const titles = await this.fileService.readJson(filePath, {});
-    titles[index] = title;
-    await this.fileService.writeJson(filePath, titles);
+    await this.fileService.updateJson(
+      filePath,
+      {},
+      (titles) => {
+        titles[index] = title;
+        return titles;
+      },
+      { recoverInvalidJson: true }
+    );
     this.logger.info(`保存文章标题: [${index}] ${title}`);
   }
 

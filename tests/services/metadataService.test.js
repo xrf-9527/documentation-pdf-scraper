@@ -12,6 +12,7 @@ describe('MetadataService', () => {
     mockFileService = {
       readJson: jest.fn(),
       writeJson: jest.fn(),
+      updateJson: jest.fn(),
       appendToJsonArray: jest.fn(),
       removeFromJsonArray: jest.fn(),
     };
@@ -30,14 +31,35 @@ describe('MetadataService', () => {
   });
 
   describe('saveArticleTitle', () => {
+    test('saveArticleTitle should use atomic updateJson instead of read+write', async () => {
+      mockFileService.updateJson = jest.fn().mockResolvedValue({});
+
+      await metadataService.saveArticleTitle(2, '标题');
+
+      expect(mockFileService.updateJson).toHaveBeenCalledWith(
+        '/metadata/articleTitles.json',
+        {},
+        expect.any(Function),
+        { recoverInvalidJson: true }
+      );
+    });
+
     test('应该保存文章标题', async () => {
-      mockFileService.readJson.mockResolvedValue({ 1: '旧标题' });
+      mockFileService.updateJson.mockResolvedValue({ 1: '旧标题', 2: '新文章标题' });
 
       await metadataService.saveArticleTitle(2, '新文章标题');
 
       expect(mockPathService.getMetadataPath).toHaveBeenCalledWith('articleTitles');
-      expect(mockFileService.readJson).toHaveBeenCalledWith('/metadata/articleTitles.json', {});
-      expect(mockFileService.writeJson).toHaveBeenCalledWith('/metadata/articleTitles.json', {
+      expect(mockFileService.updateJson).toHaveBeenCalledWith(
+        '/metadata/articleTitles.json',
+        {},
+        expect.any(Function),
+        { recoverInvalidJson: true }
+      );
+
+      const updater = mockFileService.updateJson.mock.calls[0][2];
+      const updated = updater({ 1: '旧标题' });
+      expect(updated).toEqual({
         1: '旧标题',
         2: '新文章标题',
       });
@@ -45,21 +67,25 @@ describe('MetadataService', () => {
     });
 
     test('应该覆盖已存在的标题', async () => {
-      mockFileService.readJson.mockResolvedValue({ 1: '旧标题' });
+      mockFileService.updateJson.mockResolvedValue({ 1: '更新的标题' });
 
       await metadataService.saveArticleTitle(1, '更新的标题');
 
-      expect(mockFileService.writeJson).toHaveBeenCalledWith('/metadata/articleTitles.json', {
+      const updater = mockFileService.updateJson.mock.calls[0][2];
+      const updated = updater({ 1: '旧标题' });
+      expect(updated).toEqual({
         1: '更新的标题',
       });
     });
 
     test('应该在空对象上保存标题', async () => {
-      mockFileService.readJson.mockResolvedValue({});
+      mockFileService.updateJson.mockResolvedValue({ 1: '第一个标题' });
 
       await metadataService.saveArticleTitle(1, '第一个标题');
 
-      expect(mockFileService.writeJson).toHaveBeenCalledWith('/metadata/articleTitles.json', {
+      const updater = mockFileService.updateJson.mock.calls[0][2];
+      const updated = updater({});
+      expect(updated).toEqual({
         1: '第一个标题',
       });
     });
