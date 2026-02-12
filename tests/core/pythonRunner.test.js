@@ -1,28 +1,38 @@
-import { jest } from '@jest/globals';
+import { describe, it, test, expect, beforeAll, beforeEach, afterAll, afterEach, vi } from 'vitest';
+
 import { spawn } from 'child_process';
 import fs from 'fs';
 import { EventEmitter } from 'events';
 import PythonRunner from '../../src/core/pythonRunner.js';
 
 // Mock child_process
-jest.mock('child_process');
-
-// Mock fs
-jest.mock('fs', () => ({
-  promises: {
-    access: jest.fn(),
-    stat: jest.fn(),
-  },
+vi.mock('child_process', () => ({
+  spawn: vi.fn(),
 }));
 
+// Mock fs
+vi.mock('fs', () => {
+  const mockFs = {
+    promises: {
+      access: vi.fn(),
+      stat: vi.fn(),
+    },
+  };
+
+  return {
+    default: mockFs,
+    ...mockFs,
+  };
+});
+
 // Mock logger module
-jest.mock('../../src/utils/logger.js', () => ({
-  createLogger: jest.fn(() => ({
-    debug: jest.fn(),
-    info: jest.fn(),
-    warn: jest.fn(),
-    warning: jest.fn(),
-    error: jest.fn(),
+vi.mock('../../src/utils/logger.js', () => ({
+  createLogger: vi.fn(() => ({
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    warning: vi.fn(),
+    error: vi.fn(),
   })),
 }));
 
@@ -37,10 +47,10 @@ describe('PythonRunner', () => {
     mockProcess.stdout = new EventEmitter();
     mockProcess.stderr = new EventEmitter();
     mockProcess.stdin = {
-      write: jest.fn(),
-      end: jest.fn(),
+      write: vi.fn(),
+      end: vi.fn(),
     };
-    mockProcess.kill = jest.fn();
+    mockProcess.kill = vi.fn();
     mockProcess.killed = false;
     mockProcess.pid = 12345;
 
@@ -62,8 +72,8 @@ describe('PythonRunner', () => {
   });
 
   afterEach(() => {
-    jest.clearAllMocks();
-    jest.useRealTimers();
+    vi.clearAllMocks();
+    vi.useRealTimers();
   });
 
   describe('constructor', () => {
@@ -288,21 +298,21 @@ describe('PythonRunner', () => {
     });
 
     it('should force kill with SIGKILL after timeout', () => {
-      jest.useFakeTimers();
+      vi.useFakeTimers();
 
       pythonRunner.killProcess(mockProcess, 'test-id');
 
       expect(mockProcess.kill).toHaveBeenCalledWith('SIGTERM');
 
       // Fast forward 5 seconds
-      jest.advanceTimersByTime(5000);
+      vi.advanceTimersByTime(5000);
 
       expect(mockProcess.kill).toHaveBeenCalledWith('SIGKILL');
       expect(mockLogger.warning).toHaveBeenCalledWith('Force killed Python process', {
         processId: 'test-id',
       });
 
-      jest.useRealTimers();
+      vi.useRealTimers();
     });
 
     it('should not kill already killed process', () => {
@@ -363,8 +373,8 @@ describe('PythonRunner', () => {
 
   describe('killAllProcesses', () => {
     it('should kill all running processes', async () => {
-      jest.useFakeTimers();
-      jest.spyOn(pythonRunner, 'killProcess').mockImplementation(() => {});
+      vi.useFakeTimers();
+      vi.spyOn(pythonRunner, 'killProcess').mockImplementation(() => {});
 
       // Add some processes to the map
       pythonRunner.runningProcesses.set('proc1', { process: mockProcess });
@@ -373,7 +383,7 @@ describe('PythonRunner', () => {
       const killPromise = pythonRunner.killAllProcesses();
 
       // Advance timers by 6 seconds to handle the setTimeout in killAllProcesses
-      jest.advanceTimersByTime(6000);
+      vi.advanceTimersByTime(6000);
 
       await killPromise;
 
@@ -381,7 +391,7 @@ describe('PythonRunner', () => {
       expect(pythonRunner.runningProcesses.size).toBe(0);
       expect(mockLogger.info).toHaveBeenCalledWith('All Python processes terminated');
 
-      jest.useRealTimers();
+      vi.useRealTimers();
     });
   });
 
@@ -424,7 +434,7 @@ describe('PythonRunner', () => {
 
   describe('dispose', () => {
     it('should dispose resources', async () => {
-      jest.spyOn(pythonRunner, 'killAllProcesses').mockResolvedValue();
+      vi.spyOn(pythonRunner, 'killAllProcesses').mockResolvedValue();
 
       await pythonRunner.dispose();
 

@@ -1,39 +1,48 @@
-import { jest } from '@jest/globals';
+import { describe, it, test, expect, beforeAll, beforeEach, afterAll, afterEach, vi } from 'vitest';
+
 import { createLogger } from '../src/utils/logger.js';
+import * as setupModule from '../src/core/setup.js';
+import PythonRunner from '../src/core/pythonRunner.js';
 
 // Mock all dependencies before importing app.js
-jest.mock('../src/core/setup.js', () => ({
-  createContainer: jest.fn(),
-  shutdownContainer: jest.fn().mockResolvedValue(),
-  getContainerHealth: jest.fn().mockReturnValue({ healthy: true, services: [] }),
+vi.mock('../src/core/setup.js', () => ({
+  createContainer: vi.fn(),
+  shutdownContainer: vi.fn().mockResolvedValue(),
+  getContainerHealth: vi.fn().mockReturnValue({ healthy: true, services: [] }),
 }));
 
-jest.mock('../src/core/pythonRunner.js', () => {
-  return jest.fn().mockImplementation(() => ({
-    checkPythonEnvironment: jest.fn().mockResolvedValue({
-      available: true,
-      version: 'Python 3.9.0',
-      executable: 'python3',
-    }),
-    getRunningProcesses: jest.fn().mockReturnValue([]),
-    dispose: jest.fn().mockResolvedValue(),
-  }));
-});
+vi.mock('../src/core/pythonRunner.js', () => ({
+  default: vi.fn().mockImplementation(function MockPythonRunner() {
+    return {
+      checkPythonEnvironment: vi.fn().mockResolvedValue({
+        available: true,
+        version: 'Python 3.9.0',
+        executable: 'python3',
+      }),
+      getRunningProcesses: vi.fn().mockReturnValue([]),
+      dispose: vi.fn().mockResolvedValue(),
+    };
+  }),
+}));
 
-jest.mock('../src/utils/logger.js', () => ({
-  createLogger: jest.fn((name) => ({
-    debug: jest.fn(),
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
+vi.mock('../src/utils/logger.js', () => ({
+  createLogger: vi.fn((name) => ({
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
     name,
   })),
 }));
 
 // Prevent process.exit from being called
-const mockExit = jest.spyOn(process, 'exit').mockImplementation(() => {});
+let mockExit;
 
-// Since app.js uses import.meta.url which is incompatible with Jest,
+beforeEach(() => {
+  mockExit = vi.spyOn(process, 'exit').mockImplementation(() => {});
+});
+
+// app.js uses import.meta.url; keep this mock in ESM-friendly Vitest style.
 // we'll create a comprehensive mock test that validates the expected behavior
 
 describe('Application', () => {
@@ -48,7 +57,7 @@ describe('Application', () => {
   let mockLogger;
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
 
     // Create mock Application class
     Application = class MockApplication {
@@ -90,13 +99,11 @@ describe('Application', () => {
           this.logger.info('🚀 Starting PDF Scraper Application...');
           this.logger.info('📦 Setting up dependency injection container...');
 
-          const { createContainer } = await import('../src/core/setup.js');
-          this.container = await createContainer();
+          this.container = await setupModule.createContainer();
 
           const config = await this.container.get('config');
           const appLogger = await this.container.get('logger');
 
-          const PythonRunner = (await import('../src/core/pythonRunner.js')).default;
           this.pythonRunner = new PythonRunner(config, appLogger);
 
           this.logger.info('🐍 Checking Python environment...');
@@ -108,8 +115,7 @@ describe('Application', () => {
             this.logger.info('✅ Python environment ready:', pythonCheck.version);
           }
 
-          const { getContainerHealth } = await import('../src/core/setup.js');
-          const health = getContainerHealth(this.container);
+          const health = setupModule.getContainerHealth(this.container);
           this.logger.info('🏥 Container health check:', health);
 
           const initTime = Date.now() - this.startTime;
@@ -228,13 +234,12 @@ describe('Application', () => {
 
       getStatus() {
         const uptime = this.startTime ? Date.now() - this.startTime : 0;
-        const { getContainerHealth } = require('../src/core/setup.js');
 
         return {
           status: this.isShuttingDown ? 'shutting_down' : 'running',
           uptime,
           startTime: this.startTime,
-          containerHealth: this.container ? getContainerHealth(this.container) : null,
+          containerHealth: this.container ? setupModule.getContainerHealth(this.container) : null,
           pythonProcesses: this.pythonRunner ? this.pythonRunner.getRunningProcesses() : [],
           memoryUsage: process.memoryUsage(),
           pid: process.pid,
@@ -256,8 +261,7 @@ describe('Application', () => {
           }
 
           if (this.container) {
-            const { shutdownContainer } = await import('../src/core/setup.js');
-            await shutdownContainer(this.container);
+            await setupModule.shutdownContainer(this.container);
             this.container = null;
           }
 
@@ -318,12 +322,12 @@ describe('Application', () => {
 
     // Mock services
     mockScraper = {
-      run: jest.fn().mockResolvedValue(),
+      run: vi.fn().mockResolvedValue(),
     };
 
     mockProgressTracker = {
-      start: jest.fn(),
-      getStats: jest.fn().mockReturnValue({
+      start: vi.fn(),
+      getStats: vi.fn().mockReturnValue({
         processed: 10,
         failed: 0,
         total: 10,
@@ -331,12 +335,12 @@ describe('Application', () => {
     };
 
     mockFileService = {
-      cleanDirectory: jest.fn().mockResolvedValue(),
-      ensureDirectory: jest.fn().mockResolvedValue(),
+      cleanDirectory: vi.fn().mockResolvedValue(),
+      ensureDirectory: vi.fn().mockResolvedValue(),
     };
 
     mockPythonMergeService = {
-      mergePDFs: jest.fn().mockResolvedValue({
+      mergePDFs: vi.fn().mockResolvedValue({
         success: true,
         outputFile: 'merged.pdf',
         processedFiles: 10,
@@ -344,15 +348,15 @@ describe('Application', () => {
     };
 
     mockLogger = {
-      debug: jest.fn(),
-      info: jest.fn(),
-      warn: jest.fn(),
-      error: jest.fn(),
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
     };
 
     // Mock container
     mockContainer = {
-      get: jest.fn().mockImplementation((service) => {
+      get: vi.fn().mockImplementation((service) => {
         const services = {
           config: mockConfig,
           logger: mockLogger,
@@ -365,8 +369,7 @@ describe('Application', () => {
       }),
     };
 
-    const { createContainer } = require('../src/core/setup.js');
-    createContainer.mockResolvedValue(mockContainer);
+    setupModule.createContainer.mockResolvedValue(mockContainer);
 
     app = new Application();
   });
@@ -407,23 +410,23 @@ describe('Application', () => {
       expect(app.pythonRunner).toBeDefined();
       expect(app.startTime).toBeGreaterThan(0);
 
-      const { createContainer } = require('../src/core/setup.js');
-      expect(createContainer).toHaveBeenCalled();
+      expect(setupModule.createContainer).toHaveBeenCalled();
 
       expect(app.logger.info).toHaveBeenCalledWith('🚀 Starting PDF Scraper Application...');
       expect(app.logger.info).toHaveBeenCalledWith('✅ Python environment ready:', 'Python 3.9.0');
     });
 
     it('should handle Python environment not available', async () => {
-      const PythonRunner = require('../src/core/pythonRunner.js');
-      PythonRunner.mockImplementation(() => ({
-        checkPythonEnvironment: jest.fn().mockResolvedValue({
-          available: false,
-          error: 'Python not found',
-        }),
-        getRunningProcesses: jest.fn().mockReturnValue([]),
-        dispose: jest.fn().mockResolvedValue(),
-      }));
+      PythonRunner.mockImplementation(function MockPythonRunnerUnavailable() {
+        return {
+          checkPythonEnvironment: vi.fn().mockResolvedValue({
+            available: false,
+            error: 'Python not found',
+          }),
+          getRunningProcesses: vi.fn().mockReturnValue([]),
+          dispose: vi.fn().mockResolvedValue(),
+        };
+      });
 
       await app.initialize();
 
@@ -435,8 +438,7 @@ describe('Application', () => {
     });
 
     it('should handle initialization errors', async () => {
-      const { createContainer } = require('../src/core/setup.js');
-      createContainer.mockRejectedValue(new Error('Container setup failed'));
+      setupModule.createContainer.mockRejectedValue(new Error('Container setup failed'));
 
       await expect(app.initialize()).rejects.toThrow('Container setup failed');
       expect(app.logger.error).toHaveBeenCalledWith(
@@ -633,8 +635,7 @@ describe('Application', () => {
       expect(pythonRunnerDisposeSpy).toHaveBeenCalled();
       expect(app.pythonRunner).toBeNull();
 
-      const { shutdownContainer } = require('../src/core/setup.js');
-      expect(shutdownContainer).toHaveBeenCalledWith(mockContainer);
+      expect(setupModule.shutdownContainer).toHaveBeenCalledWith(mockContainer);
       expect(app.container).toBeNull();
       expect(app.isShuttingDown).toBe(true);
     });
@@ -645,8 +646,7 @@ describe('Application', () => {
       await app.cleanup();
 
       expect(app.pythonRunner).toBeNull();
-      const { shutdownContainer } = require('../src/core/setup.js');
-      expect(shutdownContainer).toHaveBeenCalledTimes(1);
+      expect(setupModule.shutdownContainer).toHaveBeenCalledTimes(1);
     });
 
     it('should handle cleanup errors', async () => {
@@ -675,7 +675,7 @@ describe('Application', () => {
       await app.initialize();
       await app.shutdown();
 
-      const cleanupSpy = jest.spyOn(app, 'cleanup');
+      const cleanupSpy = vi.spyOn(app, 'cleanup');
       await app.shutdown();
 
       expect(cleanupSpy).not.toHaveBeenCalled();
@@ -702,7 +702,7 @@ describe('Application', () => {
 
     it('should handle healthcheck errors', async () => {
       // Force an error by making getStatus throw
-      jest.spyOn(app, 'getStatus').mockImplementation(() => {
+      vi.spyOn(app, 'getStatus').mockImplementation(() => {
         throw new Error('Status error');
       });
 
@@ -719,7 +719,7 @@ describe('Application', () => {
   describe('signal handlers', () => {
     it('should handle SIGINT', async () => {
       await app.initialize();
-      const shutdownSpy = jest.spyOn(app, 'shutdown');
+      const shutdownSpy = vi.spyOn(app, 'shutdown');
 
       process.emit('SIGINT');
       await new Promise((resolve) => setTimeout(resolve, 10));
@@ -730,7 +730,7 @@ describe('Application', () => {
 
     it('should handle uncaught exception', async () => {
       await app.initialize();
-      const shutdownSpy = jest.spyOn(app, 'shutdown');
+      const shutdownSpy = vi.spyOn(app, 'shutdown');
 
       process.emit('uncaughtException', new Error('Test error'));
       await new Promise((resolve) => setTimeout(resolve, 10));
@@ -742,7 +742,7 @@ describe('Application', () => {
 
     it('should handle unhandled rejection', async () => {
       await app.initialize();
-      const shutdownSpy = jest.spyOn(app, 'shutdown');
+      const shutdownSpy = vi.spyOn(app, 'shutdown');
 
       // Create a rejected promise but don't throw it
       const rejectedPromise = Promise.reject('test rejection');
@@ -803,21 +803,21 @@ describe('main', () => {
   };
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
 
     // Mock console methods
-    consoleLogSpy = jest.spyOn(console, 'log').mockImplementation();
-    consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
+    consoleLogSpy = vi.spyOn(console, 'log').mockImplementation();
+    consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation();
 
     // Mock Application instance methods
     mockApp = {
-      run: jest.fn().mockResolvedValue({
+      run: vi.fn().mockResolvedValue({
         totalDuration: 5000,
         scraping: { success: true },
         merge: { success: true },
       }),
-      shutdown: jest.fn().mockResolvedValue(),
-      cleanup: jest.fn().mockResolvedValue(),
+      shutdown: vi.fn().mockResolvedValue(),
+      cleanup: vi.fn().mockResolvedValue(),
     };
   });
 

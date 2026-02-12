@@ -1,4 +1,5 @@
-import { jest } from '@jest/globals';
+import { describe, it, test, expect, beforeAll, beforeEach, afterAll, afterEach, vi } from 'vitest';
+
 import { ImageService } from '../../src/services/imageService.js';
 
 describe('ImageService', () => {
@@ -8,17 +9,17 @@ describe('ImageService', () => {
 
   beforeEach(() => {
     mockLogger = {
-      debug: jest.fn(),
-      info: jest.fn(),
-      warn: jest.fn(),
-      error: jest.fn(),
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
     };
 
     mockPage = {
-      url: jest.fn().mockReturnValue('https://example.com'),
-      evaluateOnNewDocument: jest.fn(),
-      evaluate: jest.fn(),
-      isClosed: jest.fn().mockReturnValue(false),
+      url: vi.fn().mockReturnValue('https://example.com'),
+      evaluateOnNewDocument: vi.fn(),
+      evaluate: vi.fn(),
+      isClosed: vi.fn().mockReturnValue(false),
     };
 
     imageService = new ImageService({
@@ -32,7 +33,7 @@ describe('ImageService', () => {
   });
 
   afterEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   describe('constructor', () => {
@@ -78,7 +79,7 @@ describe('ImageService', () => {
     });
 
     it('should emit observer-setup event', async () => {
-      const listener = jest.fn();
+      const listener = vi.fn();
       imageService.on('observer-setup', listener);
 
       await imageService.setupImageObserver(mockPage);
@@ -173,7 +174,7 @@ describe('ImageService', () => {
     });
 
     it('should emit progress events', async () => {
-      const progressListener = jest.fn();
+      const progressListener = vi.fn();
       imageService.on('images-progress', progressListener);
 
       mockPage.evaluate.mockResolvedValue({
@@ -249,7 +250,7 @@ describe('ImageService', () => {
     });
 
     it('should emit scroll-complete event', async () => {
-      const listener = jest.fn();
+      const listener = vi.fn();
       imageService.on('scroll-complete', listener);
 
       mockPage.evaluate.mockResolvedValue({
@@ -277,12 +278,12 @@ describe('ImageService', () => {
   describe('triggerLazyLoading', () => {
     beforeEach(() => {
       // Mock scrollPage and waitForImages
-      jest.spyOn(imageService, 'scrollPage').mockResolvedValue({
+      vi.spyOn(imageService, 'scrollPage').mockResolvedValue({
         totalHeight: 2000,
         scrollSteps: [],
       });
 
-      jest.spyOn(imageService, 'waitForImages').mockResolvedValue(true);
+      vi.spyOn(imageService, 'waitForImages').mockResolvedValue(true);
     });
 
     it('should trigger lazy loading successfully', async () => {
@@ -304,7 +305,7 @@ describe('ImageService', () => {
     });
 
     it('should emit lazy-loading-triggered event', async () => {
-      const listener = jest.fn();
+      const listener = vi.fn();
       imageService.on('lazy-loading-triggered', listener);
 
       mockPage.evaluate.mockResolvedValue({
@@ -333,14 +334,14 @@ describe('ImageService', () => {
 
   describe('processPageImages', () => {
     beforeEach(() => {
-      jest.spyOn(imageService, 'setupImageObserver').mockResolvedValue();
-      jest.spyOn(imageService, 'waitForImages').mockResolvedValue(true);
-      jest.spyOn(imageService, 'triggerLazyLoading').mockResolvedValue({
+      vi.spyOn(imageService, 'setupImageObserver').mockResolvedValue();
+      vi.spyOn(imageService, 'waitForImages').mockResolvedValue(true);
+      vi.spyOn(imageService, 'triggerLazyLoading').mockResolvedValue({
         totalLazyImages: 3,
         triggered: 3,
         allImagesLoaded: true,
       });
-      jest.spyOn(imageService, 'scrollPage').mockResolvedValue({});
+      vi.spyOn(imageService, 'scrollPage').mockResolvedValue({});
     });
 
     it('should process page images successfully', async () => {
@@ -389,7 +390,7 @@ describe('ImageService', () => {
     });
 
     it('should emit page-images-complete event', async () => {
-      const listener = jest.fn();
+      const listener = vi.fn();
       imageService.on('page-images-complete', listener);
 
       await imageService.processPageImages(mockPage);
@@ -404,7 +405,7 @@ describe('ImageService', () => {
 
   describe('cleanup', () => {
     it('should perform global cleanup when no page provided', async () => {
-      jest.spyOn(imageService, 'dispose').mockResolvedValue();
+      vi.spyOn(imageService, 'dispose').mockResolvedValue();
 
       await imageService.cleanup();
 
@@ -421,7 +422,7 @@ describe('ImageService', () => {
     });
 
     it('should cleanup page if valid', async () => {
-      jest.spyOn(imageService, 'cleanupPage').mockResolvedValue(true);
+      vi.spyOn(imageService, 'cleanupPage').mockResolvedValue(true);
 
       await imageService.cleanup(mockPage);
 
@@ -429,7 +430,7 @@ describe('ImageService', () => {
     });
 
     it('should handle cleanup errors', async () => {
-      jest.spyOn(imageService, 'cleanupPage').mockRejectedValue(new Error('Cleanup failed'));
+      vi.spyOn(imageService, 'cleanupPage').mockRejectedValue(new Error('Cleanup failed'));
 
       await imageService.cleanup(mockPage);
 
@@ -473,8 +474,8 @@ describe('ImageService', () => {
 
   describe('dispose', () => {
     it('should dispose service resources', async () => {
-      jest.spyOn(imageService, 'resetStats');
-      jest.spyOn(imageService, 'removeAllListeners');
+      vi.spyOn(imageService, 'resetStats');
+      vi.spyOn(imageService, 'removeAllListeners');
 
       await imageService.dispose();
 
@@ -484,7 +485,7 @@ describe('ImageService', () => {
     });
 
     it('should emit dispose-complete event', async () => {
-      const listener = jest.fn();
+      const listener = vi.fn();
       imageService.on('dispose-complete', listener);
 
       await imageService.dispose();
@@ -493,7 +494,7 @@ describe('ImageService', () => {
     });
 
     it('should handle dispose errors', async () => {
-      jest.spyOn(imageService, 'removeAllListeners').mockImplementation(() => {
+      vi.spyOn(imageService, 'removeAllListeners').mockImplementation(() => {
         throw new Error('Dispose failed');
       });
 
@@ -551,7 +552,7 @@ describe('ImageService', () => {
     });
 
     it('should emit stats-reset event', () => {
-      const listener = jest.fn();
+      const listener = vi.fn();
       imageService.on('stats-reset', listener);
 
       imageService.resetStats();

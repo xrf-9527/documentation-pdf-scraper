@@ -252,7 +252,7 @@ class PythonRunner {
           }
         }, 5000);
 
-        // 不要因为这个保护性定时器阻止 Node/Jest 进程退出
+        // 不要因为这个保护性定时器阻止 Node 测试进程退出
         if (forceKillTimeout && typeof forceKillTimeout.unref === 'function') {
           forceKillTimeout.unref();
         }

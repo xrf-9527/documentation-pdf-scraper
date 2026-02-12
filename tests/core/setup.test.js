@@ -1,4 +1,5 @@
-import { jest } from '@jest/globals';
+import { describe, it, test, expect, beforeAll, beforeEach, afterAll, afterEach, vi } from 'vitest';
+
 import {
   setupContainer,
   createContainer,
@@ -8,76 +9,86 @@ import {
 import Container from '../../src/core/container.js';
 
 // Mock all dependencies
-jest.mock('../../src/core/container.js');
-jest.mock('../../src/utils/logger.js', () => ({
-  createLogger: jest.fn((name) => ({
-    debug: jest.fn(),
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
+vi.mock('../../src/core/container.js', () => ({
+  default: vi.fn(),
+}));
+vi.mock('../../src/utils/logger.js', () => ({
+  createLogger: vi.fn((name) => ({
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
     name,
   })),
 }));
-jest.mock('../../src/config/configValidator.js', () => ({
-  validateConfig: jest.fn(),
+vi.mock('../../src/config/configValidator.js', () => ({
+  validateConfig: vi.fn(),
 }));
 
 // Mock all service classes
-jest.mock('../../src/config/configLoader.js', () => ({
-  ConfigLoader: jest.fn().mockImplementation(() => ({
-    load: jest.fn().mockResolvedValue({ test: true }),
-  })),
+vi.mock('../../src/config/configLoader.js', () => ({
+  ConfigLoader: vi.fn().mockImplementation(function MockConfigLoader() {
+    return {
+      load: vi.fn().mockResolvedValue({ test: true }),
+    };
+  }),
 }));
-jest.mock('../../src/services/fileService.js', () => ({
-  FileService: jest.fn(),
+vi.mock('../../src/services/fileService.js', () => ({
+  FileService: vi.fn(),
 }));
-jest.mock('../../src/services/pathService.js', () => ({
-  PathService: jest.fn(),
+vi.mock('../../src/services/pathService.js', () => ({
+  PathService: vi.fn(),
 }));
-jest.mock('../../src/services/metadataService.js', () => ({
-  MetadataService: jest.fn(),
+vi.mock('../../src/services/metadataService.js', () => ({
+  MetadataService: vi.fn(),
 }));
-jest.mock('../../src/services/stateManager.js', () => ({
-  StateManager: jest.fn().mockImplementation(() => ({
-    load: jest.fn().mockResolvedValue(),
-  })),
+vi.mock('../../src/services/stateManager.js', () => ({
+  StateManager: vi.fn().mockImplementation(function MockStateManager() {
+    return {
+      load: vi.fn().mockResolvedValue(),
+    };
+  }),
 }));
-jest.mock('../../src/services/progressTracker.js', () => ({
-  ProgressTracker: jest.fn(),
+vi.mock('../../src/services/progressTracker.js', () => ({
+  ProgressTracker: vi.fn(),
 }));
-jest.mock('../../src/services/queueManager.js', () => ({
-  QueueManager: jest.fn(),
+vi.mock('../../src/services/queueManager.js', () => ({
+  QueueManager: vi.fn(),
 }));
-jest.mock('../../src/services/browserPool.js', () => ({
-  BrowserPool: jest.fn().mockImplementation(() => ({
-    initialize: jest.fn().mockResolvedValue(),
-  })),
+vi.mock('../../src/services/browserPool.js', () => ({
+  BrowserPool: vi.fn().mockImplementation(function MockBrowserPool() {
+    return {
+      initialize: vi.fn().mockResolvedValue(),
+    };
+  }),
 }));
-jest.mock('../../src/services/pageManager.js', () => ({
-  PageManager: jest.fn(),
+vi.mock('../../src/services/pageManager.js', () => ({
+  PageManager: vi.fn(),
 }));
-jest.mock('../../src/services/imageService.js', () => ({
-  ImageService: jest.fn(),
+vi.mock('../../src/services/imageService.js', () => ({
+  ImageService: vi.fn(),
 }));
-jest.mock('../../src/services/pdfStyleService.js', () => ({
-  PDFStyleService: jest.fn(),
+vi.mock('../../src/services/pdfStyleService.js', () => ({
+  PDFStyleService: vi.fn(),
 }));
-jest.mock('../../src/services/translationService.js', () => ({
-  TranslationService: jest.fn(),
+vi.mock('../../src/services/translationService.js', () => ({
+  TranslationService: vi.fn(),
 }));
-jest.mock('../../src/services/markdownService.js', () => ({
-  MarkdownService: jest.fn(),
+vi.mock('../../src/services/markdownService.js', () => ({
+  MarkdownService: vi.fn(),
 }));
-jest.mock('../../src/services/pandocPdfService.js', () => ({
-  PandocPdfService: jest.fn(),
+vi.mock('../../src/services/pandocPdfService.js', () => ({
+  PandocPdfService: vi.fn(),
 }));
-jest.mock('../../src/core/scraper.js', () => ({
-  Scraper: jest.fn().mockImplementation(() => ({
-    initialize: jest.fn().mockResolvedValue(),
-  })),
+vi.mock('../../src/core/scraper.js', () => ({
+  Scraper: vi.fn().mockImplementation(function MockScraper() {
+    return {
+      initialize: vi.fn().mockResolvedValue(),
+    };
+  }),
 }));
-jest.mock('../../src/services/PythonMergeService.js', () => ({
-  PythonMergeService: jest.fn(),
+vi.mock('../../src/services/PythonMergeService.js', () => ({
+  PythonMergeService: vi.fn(),
 }));
 
 describe('setup', () => {
@@ -85,26 +96,28 @@ describe('setup', () => {
   let mockLogger;
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
 
     // Create mock container
     mockContainer = {
-      register: jest.fn(),
-      get: jest.fn().mockResolvedValue({}),
-      validateDependencies: jest.fn(),
-      getStats: jest.fn().mockReturnValue({
+      register: vi.fn(),
+      get: vi.fn().mockResolvedValue({}),
+      validateDependencies: vi.fn(),
+      getStats: vi.fn().mockReturnValue({
         registeredServices: 15,
         instances: 5,
         singletons: 15,
       }),
-      getHealth: jest.fn().mockReturnValue({
+      getHealth: vi.fn().mockReturnValue({
         healthy: true,
         services: [],
       }),
-      dispose: jest.fn().mockResolvedValue(),
+      dispose: vi.fn().mockResolvedValue(),
     };
 
-    Container.mockImplementation(() => mockContainer);
+    Container.mockImplementation(function MockContainer() {
+      return mockContainer;
+    });
   });
 
   describe('setupContainer', () => {
@@ -440,7 +453,7 @@ describe('setup', () => {
       )[1];
 
       const { TranslationService } = await import('../../src/services/translationService.js');
-      const mockPathService = { getTranslationCacheDirectory: jest.fn() };
+      const mockPathService = { getTranslationCacheDirectory: vi.fn() };
       translationServiceFactory(
         { translation: { enabled: true } },
         mockPathService,

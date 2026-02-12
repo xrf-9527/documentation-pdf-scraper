@@ -1,3 +1,5 @@
+import { describe, it, test, expect, beforeAll, beforeEach, afterAll, afterEach, vi } from 'vitest';
+
 // tests/utils/url.test.js
 import { normalizeUrl, getUrlHash, validateUrl, extractSubfolder } from '../../src/utils/url.js';
 

@@ -1,19 +1,21 @@
+import { describe, it, test, expect, beforeAll, beforeEach, afterAll, afterEach, vi } from 'vitest';
+
 // tests/services/queueManager.test.js
 import { QueueManager } from '../../src/services/queueManager.js';
 import { EventEmitter } from 'events';
 
 // Mock p-queue
-jest.mock('p-queue', () => {
-  const EventEmitterCopy = require('events').EventEmitter;
+vi.mock('p-queue', async () => {
+  const { EventEmitter: MockEventEmitter } = await vi.importActual('events');
 
-  return jest.fn().mockImplementation(function (options) {
-    const mockQueue = new EventEmitterCopy();
+  const MockPQueue = vi.fn().mockImplementation(function MockPQueue(options) {
+    const mockQueue = new MockEventEmitter();
     Object.assign(mockQueue, {
       size: 0,
       pending: 0,
       isPaused: false,
       concurrency: options.concurrency || 1,
-      add: jest.fn().mockImplementation(async (fn, options) => {
+      add: vi.fn().mockImplementation(async (fn, options) => {
         mockQueue.emit('add');
         mockQueue.emit('active');
         try {
@@ -28,17 +30,21 @@ jest.mock('p-queue', () => {
           throw error;
         }
       }),
-      onIdle: jest.fn().mockResolvedValue(),
-      clear: jest.fn(),
-      pause: jest.fn().mockImplementation(() => {
+      onIdle: vi.fn().mockResolvedValue(),
+      clear: vi.fn(),
+      pause: vi.fn().mockImplementation(() => {
         mockQueue.isPaused = true;
       }),
-      start: jest.fn().mockImplementation(() => {
+      start: vi.fn().mockImplementation(() => {
         mockQueue.isPaused = false;
       }),
     });
     return mockQueue;
   });
+
+  return {
+    default: MockPQueue,
+  };
 });
 
 describe('QueueManager', () => {
@@ -76,45 +82,34 @@ describe('QueueManager', () => {
   });
 
   describe('事件处理', () => {
-    test('应该转发active事件', (done) => {
-      queueManager.on('active', (data) => {
-        expect(data).toEqual({ size: 0, pending: 0 });
-        done();
-      });
-
+    test('应该转发active事件', async () => {
+      const eventPromise = new Promise((resolve) => queueManager.once('active', resolve));
       queueManager.queue.emit('active');
+      await expect(eventPromise).resolves.toEqual({ size: 0, pending: 0 });
     });
 
-    test('应该转发idle事件', (done) => {
-      queueManager.on('idle', () => {
-        done();
-      });
-
+    test('应该转发idle事件', async () => {
+      const eventPromise = new Promise((resolve) => queueManager.once('idle', resolve));
       queueManager.queue.emit('idle');
+      await expect(eventPromise).resolves.toBeUndefined();
     });
 
-    test('应该转发taskAdded事件', (done) => {
-      queueManager.on('taskAdded', (data) => {
-        expect(data).toEqual({ size: 0, pending: 0 });
-        done();
-      });
-
+    test('应该转发taskAdded事件', async () => {
+      const eventPromise = new Promise((resolve) => queueManager.once('taskAdded', resolve));
       queueManager.queue.emit('add');
+      await expect(eventPromise).resolves.toEqual({ size: 0, pending: 0 });
     });
 
-    test('应该转发taskCompleted事件', (done) => {
-      queueManager.on('taskCompleted', (data) => {
-        expect(data).toEqual({ size: 0, pending: 0 });
-        done();
-      });
-
+    test('应该转发taskCompleted事件', async () => {
+      const eventPromise = new Promise((resolve) => queueManager.once('taskCompleted', resolve));
       queueManager.queue.emit('next');
+      await expect(eventPromise).resolves.toEqual({ size: 0, pending: 0 });
     });
   });
 
   describe('addTask', () => {
     test('应该添加任务并执行', async () => {
-      const fn = jest.fn().mockResolvedValue('result');
+      const fn = vi.fn().mockResolvedValue('result');
 
       const result = await queueManager.addTask('task1', fn);
 
@@ -129,7 +124,7 @@ describe('QueueManager', () => {
     });
 
     test('应该处理任务优先级', async () => {
-      const fn = jest.fn().mockResolvedValue('result');
+      const fn = vi.fn().mockResolvedValue('result');
 
       await queueManager.addTask('task1', fn, { priority: 10 });
 
@@ -138,37 +133,41 @@ describe('QueueManager', () => {
       expect(queueManager.queue.add).toHaveBeenCalledWith(expect.any(Function), { priority: 10 });
     });
 
-    test('应该在任务成功时发出taskSuccess事件', (done) => {
-      const fn = jest.fn().mockResolvedValue('success');
+    test('应该在任务成功时发出taskSuccess事件', async () => {
+      const fn = vi.fn().mockResolvedValue('success');
+      const eventPromise = new Promise((resolve) => queueManager.once('taskSuccess', resolve));
 
-      queueManager.on('taskSuccess', (event) => {
-        expect(event.id).toBe('task1');
-        expect(event.result).toBe('success');
-        expect(event.task).toBeDefined();
-        done();
-      });
-
-      queueManager.addTask('task1', fn);
+      await queueManager.addTask('task1', fn);
+      await expect(eventPromise).resolves.toEqual(
+        expect.objectContaining({
+          id: 'task1',
+          result: 'success',
+          task: expect.any(Object),
+        })
+      );
     });
 
-    test('应该在任务失败时发出taskFailed事件', (done) => {
+    test('应该在任务失败时发出taskFailed事件', async () => {
       const error = new Error('Task failed');
-      const fn = jest.fn().mockRejectedValue(error);
+      const fn = vi.fn().mockRejectedValue(error);
+      const eventPromise = new Promise((resolve) => queueManager.once('taskFailed', resolve));
 
-      queueManager.on('taskFailed', (event) => {
-        expect(event.id).toBe('task1');
-        expect(event.error).toBe(error);
-        expect(event.task.status).toBe('failed');
-        expect(event.task.error).toBe(error);
-        done();
-      });
-
-      queueManager.addTask('task1', fn).catch(() => {});
+      await expect(queueManager.addTask('task1', fn)).rejects.toThrow('Task failed');
+      await expect(eventPromise).resolves.toEqual(
+        expect.objectContaining({
+          id: 'task1',
+          error,
+          task: expect.objectContaining({
+            status: 'failed',
+            error,
+          }),
+        })
+      );
     });
 
     test('应该记录任务执行时间', async () => {
       let resolveTask;
-      const fn = jest.fn().mockImplementation(
+      const fn = vi.fn().mockImplementation(
         () =>
           new Promise((resolve) => {
             resolveTask = resolve;
@@ -192,7 +191,7 @@ describe('QueueManager', () => {
     });
 
     test('任务完成后应从活动任务中移除，并可通过详情接口查询历史', async () => {
-      const fn = jest.fn().mockResolvedValue('result');
+      const fn = vi.fn().mockResolvedValue('result');
 
       await queueManager.addTask('history-task', fn);
 
@@ -221,9 +220,9 @@ describe('QueueManager', () => {
   describe('addBatch', () => {
     test('应该批量添加任务', async () => {
       const tasks = [
-        { id: 'task1', fn: jest.fn().mockResolvedValue('result1') },
-        { id: 'task2', fn: jest.fn().mockResolvedValue('result2') },
-        { id: 'task3', fn: jest.fn().mockRejectedValue(new Error('error3')) },
+        { id: 'task1', fn: vi.fn().mockResolvedValue('result1') },
+        { id: 'task2', fn: vi.fn().mockResolvedValue('result2') },
+        { id: 'task3', fn: vi.fn().mockRejectedValue(new Error('error3')) },
       ];
 
       const results = await queueManager.addBatch(tasks);
@@ -246,8 +245,8 @@ describe('QueueManager', () => {
 
     test('应该处理带选项的批量任务', async () => {
       const tasks = [
-        { id: 'task1', fn: jest.fn().mockResolvedValue('result1'), options: { priority: 10 } },
-        { id: 'task2', fn: jest.fn().mockResolvedValue('result2'), options: { priority: 5 } },
+        { id: 'task1', fn: vi.fn().mockResolvedValue('result1'), options: { priority: 10 } },
+        { id: 'task2', fn: vi.fn().mockResolvedValue('result2'), options: { priority: 5 } },
       ];
 
       await queueManager.addBatch(tasks);
@@ -376,7 +375,7 @@ describe('QueueManager', () => {
 
   describe('任务生命周期', () => {
     test('任务应该经历完整的生命周期', async () => {
-      const fn = jest
+      const fn = vi
         .fn()
         .mockImplementation(() => new Promise((resolve) => setTimeout(() => resolve('done'), 10)));
 

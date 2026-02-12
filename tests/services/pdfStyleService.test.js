@@ -1,13 +1,14 @@
-import { jest } from '@jest/globals';
+import { describe, it, test, expect, beforeAll, beforeEach, afterAll, afterEach, vi } from 'vitest';
+
 import { PDFStyleService } from '../../src/services/pdfStyleService.js';
 
 // Mock logger module to prevent file system operations
-jest.mock('../../src/utils/logger.js', () => ({
-  createLogger: jest.fn(() => ({
-    debug: jest.fn(),
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
+vi.mock('../../src/utils/logger.js', () => ({
+  createLogger: vi.fn(() => ({
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
   })),
 }));
 
@@ -18,8 +19,8 @@ describe('PDFStyleService', () => {
 
   beforeEach(() => {
     mockPage = {
-      evaluate: jest.fn(),
-      url: jest.fn().mockReturnValue('https://example.com/page'),
+      evaluate: vi.fn(),
+      url: vi.fn().mockReturnValue('https://example.com/page'),
     };
 
     pdfStyleService = new PDFStyleService({
@@ -32,7 +33,7 @@ describe('PDFStyleService', () => {
   });
 
   afterEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   describe('constructor', () => {

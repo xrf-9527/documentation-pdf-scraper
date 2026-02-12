@@ -1,3 +1,5 @@
+import { describe, it, test, expect, beforeAll, beforeEach, afterAll, afterEach, vi } from 'vitest';
+
 // tests/services/stateManager.test.js
 import { StateManager } from '../../src/services/stateManager.js';
 import { EventEmitter } from 'events';
@@ -11,33 +13,33 @@ describe('StateManager', () => {
   beforeEach(() => {
     // Mock dependencies
     mockFileService = {
-      readJson: jest.fn(),
-      writeJson: jest.fn(),
+      readJson: vi.fn(),
+      writeJson: vi.fn(),
     };
 
     mockPathService = {
-      getMetadataPath: jest.fn((type) => `/metadata/${type}.json`),
+      getMetadataPath: vi.fn((type) => `/metadata/${type}.json`),
     };
 
     mockLogger = {
-      info: jest.fn(),
-      warn: jest.fn(),
-      error: jest.fn(),
-      debug: jest.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
     };
 
     stateManager = new StateManager(mockFileService, mockPathService, mockLogger);
 
     // Clear all timers
-    jest.clearAllTimers();
-    jest.useFakeTimers();
+    vi.clearAllTimers();
+    vi.useFakeTimers();
   });
 
   afterEach(() => {
     if (stateManager.autoSaveTimer) {
       stateManager.stopAutoSave();
     }
-    jest.useRealTimers();
+    vi.useRealTimers();
   });
 
   describe('constructor', () => {
@@ -245,12 +247,12 @@ describe('StateManager', () => {
     });
 
     test('应该定期自动保存', async () => {
-      const saveSpy = jest.spyOn(stateManager, 'save').mockResolvedValue();
+      const saveSpy = vi.spyOn(stateManager, 'save').mockResolvedValue();
 
       stateManager.startAutoSave();
 
       // 快进30秒
-      jest.advanceTimersByTime(30000);
+      vi.advanceTimersByTime(30000);
 
       expect(saveSpy).toHaveBeenCalled();
     });
@@ -273,10 +275,10 @@ describe('StateManager', () => {
     });
 
     test('应该处理自动保存错误', async () => {
-      const saveSpy = jest.spyOn(stateManager, 'save').mockRejectedValue(new Error('Save error'));
+      const saveSpy = vi.spyOn(stateManager, 'save').mockRejectedValue(new Error('Save error'));
 
       stateManager.startAutoSave();
-      jest.advanceTimersByTime(30000);
+      vi.advanceTimersByTime(30000);
 
       // 等待异步操作
       await Promise.resolve();

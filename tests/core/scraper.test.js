@@ -1,4 +1,5 @@
-import { jest } from '@jest/globals';
+import { describe, it, test, expect, beforeAll, beforeEach, afterAll, afterEach, vi } from 'vitest';
+
 import { Scraper } from '../../src/core/scraper.js';
 import { NetworkError, ValidationError } from '../../src/utils/errors.js';
 import { EventEmitter } from 'events';
@@ -10,11 +11,11 @@ describe('Scraper', () => {
 
   beforeEach(() => {
     mockPage = {
-      goto: jest.fn(),
-      evaluate: jest.fn(),
-      waitForSelector: jest.fn(),
-      pdf: jest.fn(),
-      close: jest.fn(),
+      goto: vi.fn(),
+      evaluate: vi.fn(),
+      waitForSelector: vi.fn(),
+      pdf: vi.fn(),
+      close: vi.fn(),
     };
 
     mockDependencies = {
@@ -31,58 +32,58 @@ describe('Scraper', () => {
         pdf: { engine: 'puppeteer' },
       },
       logger: {
-        info: jest.fn(),
-        debug: jest.fn(),
-        warn: jest.fn(),
-        error: jest.fn(),
+        info: vi.fn(),
+        debug: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
       },
       browserPool: {
         isInitialized: false,
-        initialize: jest.fn(),
-        close: jest.fn(),
+        initialize: vi.fn(),
+        close: vi.fn(),
       },
       pageManager: {
-        createPage: jest.fn().mockResolvedValue(mockPage),
-        closePage: jest.fn(),
-        closeAll: jest.fn(),
+        createPage: vi.fn().mockResolvedValue(mockPage),
+        closePage: vi.fn(),
+        closeAll: vi.fn(),
       },
       fileService: {
-        ensureDirectory: jest.fn(),
+        ensureDirectory: vi.fn(),
       },
       pathService: {
-        getPdfPath: jest.fn().mockReturnValue('./pdfs/001-page.pdf'),
+        getPdfPath: vi.fn().mockReturnValue('./pdfs/001-page.pdf'),
       },
       metadataService: {
-        saveArticleTitle: jest.fn(),
-        logImageLoadFailure: jest.fn(),
-        logFailedLink: jest.fn(),
-        saveSectionStructure: jest.fn(),
+        saveArticleTitle: vi.fn(),
+        logImageLoadFailure: vi.fn(),
+        logFailedLink: vi.fn(),
+        saveSectionStructure: vi.fn(),
       },
       stateManager: {
-        on: jest.fn(),
-        load: jest.fn(),
-        save: jest.fn(),
-        isProcessed: jest.fn().mockReturnValue(false),
-        markProcessed: jest.fn(),
-        markFailed: jest.fn(),
-        clearFailure: jest.fn(),
-        setStartTime: jest.fn(),
-        setUrlIndex: jest.fn(),
-        getFailedUrls: jest.fn().mockReturnValue([]),
+        on: vi.fn(),
+        load: vi.fn(),
+        save: vi.fn(),
+        isProcessed: vi.fn().mockReturnValue(false),
+        markProcessed: vi.fn(),
+        markFailed: vi.fn(),
+        clearFailure: vi.fn(),
+        setStartTime: vi.fn(),
+        setUrlIndex: vi.fn(),
+        getFailedUrls: vi.fn().mockReturnValue([]),
         state: {
           processedUrls: new Set(),
           failedUrls: new Map(),
         },
       },
       progressTracker: {
-        on: jest.fn(),
-        start: jest.fn(),
-        startUrl: jest.fn(),
-        skip: jest.fn(),
-        success: jest.fn(),
-        failure: jest.fn(),
-        finish: jest.fn(),
-        getStats: jest.fn().mockReturnValue({
+        on: vi.fn(),
+        start: vi.fn(),
+        startUrl: vi.fn(),
+        skip: vi.fn(),
+        success: vi.fn(),
+        failure: vi.fn(),
+        finish: vi.fn(),
+        getStats: vi.fn().mockReturnValue({
           processed: 0,
           failed: 0,
           skipped: 0,
@@ -90,14 +91,14 @@ describe('Scraper', () => {
         }),
       },
       queueManager: {
-        on: jest.fn(),
-        setConcurrency: jest.fn(),
-        addTask: jest.fn(),
-        waitForIdle: jest.fn(),
-        pause: jest.fn(),
-        resume: jest.fn(),
-        clear: jest.fn(),
-        getStatus: jest.fn().mockReturnValue({
+        on: vi.fn(),
+        setConcurrency: vi.fn(),
+        addTask: vi.fn(),
+        waitForIdle: vi.fn(),
+        pause: vi.fn(),
+        resume: vi.fn(),
+        clear: vi.fn(),
+        getStatus: vi.fn().mockReturnValue({
           pending: 0,
           active: 0,
           completed: 0,
@@ -105,15 +106,15 @@ describe('Scraper', () => {
         }),
       },
       imageService: {
-        setupImageObserver: jest.fn(),
-        triggerLazyLoading: jest.fn().mockResolvedValue(true),
-        cleanupPage: jest.fn(),
+        setupImageObserver: vi.fn(),
+        triggerLazyLoading: vi.fn().mockResolvedValue(true),
+        cleanupPage: vi.fn(),
       },
       pdfStyleService: {
-        applyPDFStyles: jest.fn(),
-        processSpecialContent: jest.fn(),
-        removeDarkTheme: jest.fn(),
-        getPDFOptions: jest.fn().mockReturnValue({
+        applyPDFStyles: vi.fn(),
+        processSpecialContent: vi.fn(),
+        removeDarkTheme: vi.fn(),
+        getPDFOptions: vi.fn().mockReturnValue({
           format: 'A4',
           printBackground: true,
         }),
@@ -124,7 +125,7 @@ describe('Scraper', () => {
   });
 
   afterEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   describe('constructor', () => {
@@ -252,7 +253,7 @@ describe('Scraper', () => {
     it('should filter other entry points (ignore hash/query) and non-http(s) URLs', async () => {
       scraper.config.navExcludeSelector = '.nav-tabs';
 
-      const getEntryPointsSpy = jest.spyOn(scraper, '_getEntryPoints');
+      const getEntryPointsSpy = vi.spyOn(scraper, '_getEntryPoints');
 
       mockPage.evaluate.mockResolvedValue([
         'https://example.com/page1',
@@ -502,7 +503,7 @@ describe('Scraper', () => {
       const staleUrl = 'https://example.com/stale';
       mockDependencies.stateManager.getFailedUrls.mockReturnValue([[staleUrl, { message: 'old' }]]);
       mockDependencies.stateManager.isProcessed.mockImplementation((url) => url === staleUrl);
-      const scrapeSpy = jest.spyOn(scraper, 'scrapePage').mockResolvedValue({ status: 'success' });
+      const scrapeSpy = vi.spyOn(scraper, 'scrapePage').mockResolvedValue({ status: 'success' });
 
       await scraper.retryFailedUrls();
 
@@ -517,10 +518,10 @@ describe('Scraper', () => {
 
   describe('run', () => {
     beforeEach(() => {
-      scraper.initialize = jest.fn();
-      scraper.collectUrls = jest.fn().mockResolvedValue(['https://example.com/page1']);
-      scraper.scrapePage = jest.fn();
-      scraper.cleanup = jest.fn();
+      scraper.initialize = vi.fn();
+      scraper.collectUrls = vi.fn().mockResolvedValue(['https://example.com/page1']);
+      scraper.scrapePage = vi.fn();
+      scraper.cleanup = vi.fn();
       mockDependencies.queueManager.addTask.mockImplementation((id, task) => task());
     });
 
@@ -608,7 +609,7 @@ describe('Scraper', () => {
 
     it('should stop scraper', async () => {
       scraper.isRunning = true;
-      scraper.cleanup = jest.fn();
+      scraper.cleanup = vi.fn();
 
       await scraper.stop();
 
@@ -676,7 +677,7 @@ describe('Scraper', () => {
 
   describe('event emissions', () => {
     it('should emit initialized event', async () => {
-      const listener = jest.fn();
+      const listener = vi.fn();
       scraper.on('initialized', listener);
 
       await scraper.initialize();
@@ -694,7 +695,7 @@ describe('Scraper', () => {
         .mockResolvedValueOnce('Section Title') // _extractSectionTitle
         .mockResolvedValueOnce(['https://example.com/page1']); // _collectUrlsFromEntryPoint
 
-      const listener = jest.fn();
+      const listener = vi.fn();
       scraper.on('urlsCollected', listener);
 
       await scraper.collectUrls();
@@ -712,7 +713,7 @@ describe('Scraper', () => {
       mockPage.goto.mockResolvedValue({ status: () => 200 });
       mockPage.evaluate.mockResolvedValue({ title: 'Title', source: 'document.title' });
 
-      const listener = jest.fn();
+      const listener = vi.fn();
       scraper.on('pageScraped', listener);
 
       await scraper.scrapePage('https://example.com/page', 0);

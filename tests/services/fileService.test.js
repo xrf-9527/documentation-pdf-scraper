@@ -1,3 +1,5 @@
+import { describe, it, test, expect, beforeAll, beforeEach, afterAll, afterEach, vi } from 'vitest';
+
 // tests/services/fileService.test.js
 import { FileService } from '../../src/services/fileService.js';
 import { consoleLogger } from '../../src/utils/logger.js';
@@ -137,7 +139,7 @@ describe('FileService', () => {
       const dirPath = path.join(testDir, 'as-directory');
       await fs.mkdir(dirPath, { recursive: true });
 
-      const updater = jest.fn((draft) => {
+      const updater = vi.fn((draft) => {
         draft.changed = true;
         return draft;
       });

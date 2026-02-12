@@ -1,7 +1,14 @@
+import { describe, it, test, expect, beforeAll, beforeEach, afterAll, afterEach, vi } from 'vitest';
+
 // tests/services/pandocPdfService.test.js
 import { PandocPdfService } from '../../src/services/pandocPdfService.js';
+import { spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
+
+vi.mock('child_process', () => ({
+  spawn: vi.fn(),
+}));
 
 describe('PandocPdfService', () => {
   let service;
@@ -15,10 +22,10 @@ describe('PandocPdfService', () => {
     }
 
     mockLogger = {
-      info: jest.fn(),
-      error: jest.fn(),
-      warn: jest.fn(),
-      debug: jest.fn(),
+      info: vi.fn(),
+      error: vi.fn(),
+      warn: vi.fn(),
+      debug: vi.fn(),
     };
 
     service = new PandocPdfService({
@@ -119,7 +126,7 @@ describe('PandocPdfService', () => {
       const outputPath = path.join(tempDir, 'output.pdf');
 
       // Mock _runPandoc
-      service._runPandoc = jest.fn().mockResolvedValue();
+      service._runPandoc = vi.fn().mockResolvedValue();
 
       await service.convertContentToPdf(content, outputPath);
 
@@ -134,7 +141,7 @@ describe('PandocPdfService', () => {
       const content = '# Test';
       const outputPath = path.join(tempDir, 'output.pdf');
 
-      service._runPandoc = jest.fn().mockResolvedValue();
+      service._runPandoc = vi.fn().mockResolvedValue();
 
       await service.convertContentToPdf(content, outputPath);
 
@@ -150,7 +157,7 @@ describe('PandocPdfService', () => {
       const content = '# Test';
       const outputPath = path.join(tempDir, 'output.pdf');
 
-      service._runPandoc = jest.fn().mockRejectedValue(new Error('Pandoc error'));
+      service._runPandoc = vi.fn().mockRejectedValue(new Error('Pandoc error'));
 
       await expect(service.convertContentToPdf(content, outputPath)).rejects.toThrow(
         'Pandoc error'
@@ -167,7 +174,7 @@ describe('PandocPdfService', () => {
 
       fs.writeFileSync(inputPath, '# Test\n\nContent', 'utf8');
 
-      service._runPandoc = jest.fn().mockResolvedValue();
+      service._runPandoc = vi.fn().mockResolvedValue();
 
       await service.convertToPdf(inputPath, outputPath);
 
@@ -185,7 +192,7 @@ describe('PandocPdfService', () => {
 
       fs.writeFileSync(inputPath, '# Test', 'utf8');
 
-      service._runPandoc = jest.fn().mockRejectedValue(new Error('File error'));
+      service._runPandoc = vi.fn().mockRejectedValue(new Error('File error'));
 
       await expect(service.convertToPdf(inputPath, outputPath)).rejects.toThrow('File error');
 
@@ -232,12 +239,11 @@ describe('PandocPdfService', () => {
       fs.writeFileSync(inputPath, '# Test', 'utf8');
 
       // Mock spawn to simulate success but no file
-      const originalSpawn = require('child_process').spawn;
-      jest.spyOn(require('child_process'), 'spawn').mockImplementation(() => {
+      const spawnSpy = vi.mocked(spawn).mockImplementation(() => {
         const mockChild = {
-          stdout: { on: jest.fn() },
-          stderr: { on: jest.fn() },
-          on: jest.fn((event, callback) => {
+          stdout: { on: vi.fn() },
+          stderr: { on: vi.fn() },
+          on: vi.fn((event, callback) => {
             if (event === 'close') {
               setTimeout(() => callback(0), 10); // Exit code 0
             }
@@ -248,7 +254,7 @@ describe('PandocPdfService', () => {
 
       await expect(service._runPandoc(inputPath, outputPath, {})).rejects.toThrow('PDF 文件未生成');
 
-      require('child_process').spawn.mockRestore();
+      spawnSpy.mockReset();
     });
   });
 });

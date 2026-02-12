@@ -1,3 +1,5 @@
+import { describe, it, test, expect, beforeAll, beforeEach, afterAll, afterEach, vi } from 'vitest';
+
 // tests/utils/errors.test.js
 import {
   ScraperError,

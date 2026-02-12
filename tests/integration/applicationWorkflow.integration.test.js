@@ -1,7 +1,8 @@
+import { describe, it, test, expect, beforeAll, beforeEach, afterAll, afterEach, vi } from 'vitest';
+
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
-import { jest } from '@jest/globals';
 
 let mockCreateContainer;
 let mockShutdownContainer;
@@ -11,30 +12,30 @@ let mockPythonRunnerDispose;
 let mockGetRunningProcesses;
 let mockLogger;
 
-jest.mock('../../src/core/setup.js', () => ({
+vi.mock('../../src/core/setup.js', () => ({
   createContainer: (...args) => mockCreateContainer(...args),
   shutdownContainer: (...args) => mockShutdownContainer(...args),
   getContainerHealth: (...args) => mockGetContainerHealth(...args),
 }));
 
-jest.mock('../../src/core/pythonRunner.js', () => ({
+vi.mock('../../src/core/pythonRunner.js', () => ({
   __esModule: true,
-  default: jest.fn().mockImplementation(() => ({
-    checkPythonEnvironment: (...args) => mockCheckPythonEnvironment(...args),
-    dispose: (...args) => mockPythonRunnerDispose(...args),
-    getRunningProcesses: (...args) => mockGetRunningProcesses(...args),
-  })),
+  default: vi.fn(function MockPythonRunner() {
+    this.checkPythonEnvironment = (...args) => mockCheckPythonEnvironment(...args);
+    this.dispose = (...args) => mockPythonRunnerDispose(...args);
+    this.getRunningProcesses = (...args) => mockGetRunningProcesses(...args);
+  }),
 }));
 
-jest.mock('../../src/utils/logger.js', () => ({
-  createLogger: jest.fn(() => mockLogger),
+vi.mock('../../src/utils/logger.js', () => ({
+  createLogger: vi.fn(() => mockLogger),
 }));
 
 import { Application } from '../../src/app.js';
 
 function createMockContainer(serviceMap) {
   return {
-    get: jest.fn(async (name) => {
+    get: vi.fn(async (name) => {
       if (!(name in serviceMap)) {
         throw new Error(`Unknown service requested in test: ${name}`);
       }
@@ -51,24 +52,24 @@ describe('Application minimal workflow integration', () => {
   let processOnSpy;
 
   beforeEach(() => {
-    jest.clearAllMocks();
-    mockCreateContainer = jest.fn();
-    mockShutdownContainer = jest.fn().mockResolvedValue();
-    mockGetContainerHealth = jest.fn().mockReturnValue({ healthy: true, services: [] });
-    mockCheckPythonEnvironment = jest.fn().mockResolvedValue({
+    vi.clearAllMocks();
+    mockCreateContainer = vi.fn();
+    mockShutdownContainer = vi.fn().mockResolvedValue();
+    mockGetContainerHealth = vi.fn().mockReturnValue({ healthy: true, services: [] });
+    mockCheckPythonEnvironment = vi.fn().mockResolvedValue({
       available: true,
       version: 'Python 3.11.0',
       executable: 'python3',
     });
-    mockPythonRunnerDispose = jest.fn().mockResolvedValue();
-    mockGetRunningProcesses = jest.fn().mockReturnValue([]);
+    mockPythonRunnerDispose = vi.fn().mockResolvedValue();
+    mockGetRunningProcesses = vi.fn().mockReturnValue([]);
     mockLogger = {
-      debug: jest.fn(),
-      info: jest.fn(),
-      warn: jest.fn(),
-      error: jest.fn(),
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
     };
-    processOnSpy = jest.spyOn(process, 'on').mockImplementation(() => process);
+    processOnSpy = vi.spyOn(process, 'on').mockImplementation(() => process);
   });
 
   afterEach(() => {
@@ -85,7 +86,7 @@ describe('Application minimal workflow integration', () => {
   it('runs scrape + python merge workflow in standard mode', async () => {
     const tempRoot = await createTempDir('app-standard');
     const pdfDir = path.join(tempRoot, 'pdfs');
-    const tempDirectory = path.join('.temp', `jest-app-standard-${Date.now()}`);
+    const tempDirectory = path.join('.temp', `vi-app-standard-${Date.now()}`);
 
     const config = {
       rootURL: 'https://docs.example.com/start',
@@ -94,18 +95,18 @@ describe('Application minimal workflow integration', () => {
       markdownPdf: { batchMode: false },
     };
 
-    const scraper = { run: jest.fn().mockResolvedValue() };
+    const scraper = { run: vi.fn().mockResolvedValue() };
     const progressTracker = {
-      start: jest.fn(),
-      getStats: jest.fn().mockReturnValue({ total: 1, completed: 1, failed: 0 }),
+      start: vi.fn(),
+      getStats: vi.fn().mockReturnValue({ total: 1, completed: 1, failed: 0 }),
     };
     const fileService = {
-      ensureDirectory: jest.fn(async (dir) => {
+      ensureDirectory: vi.fn(async (dir) => {
         await fs.mkdir(dir, { recursive: true });
       }),
     };
     const pythonMergeService = {
-      mergePDFs: jest.fn().mockResolvedValue({
+      mergePDFs: vi.fn().mockResolvedValue({
         success: true,
         outputFile: 'docs.pdf',
         processedFiles: 1,
@@ -153,24 +154,24 @@ describe('Application minimal workflow integration', () => {
       markdownPdf: { batchMode: true },
     };
 
-    const scraper = { run: jest.fn().mockResolvedValue() };
+    const scraper = { run: vi.fn().mockResolvedValue() };
     const progressTracker = {
-      start: jest.fn(),
-      getStats: jest.fn().mockReturnValue({ total: 2, completed: 2, failed: 0 }),
+      start: vi.fn(),
+      getStats: vi.fn().mockReturnValue({ total: 2, completed: 2, failed: 0 }),
     };
     const fileService = {
-      ensureDirectory: jest.fn(async (dir) => {
+      ensureDirectory: vi.fn(async (dir) => {
         await fs.mkdir(dir, { recursive: true });
       }),
     };
     const markdownToPdfService = {
-      generateBatchPdf: jest.fn().mockResolvedValue({
+      generateBatchPdf: vi.fn().mockResolvedValue({
         success: true,
         outputPath: 'batch.pdf',
         filesProcessed: 2,
       }),
     };
-    const pythonMergeService = { mergePDFs: jest.fn() };
+    const pythonMergeService = { mergePDFs: vi.fn() };
 
     const container = createMockContainer({
       config,

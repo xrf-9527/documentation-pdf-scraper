@@ -1,8 +1,10 @@
+import { describe, it, test, expect, beforeAll, beforeEach, afterAll, afterEach, vi } from 'vitest';
+
 import { NetworkError } from '../../src/utils/errors.js';
 
 // Mock puppeteer-extra and stealth plugin before importing BrowserPool
-jest.mock('puppeteer-extra');
-jest.mock('puppeteer-extra-plugin-stealth');
+vi.mock('puppeteer-extra');
+vi.mock('puppeteer-extra-plugin-stealth');
 
 // Import BrowserPool and mocked modules
 import { BrowserPool } from '../../src/services/browserPool.js';
@@ -16,22 +18,22 @@ describe('BrowserPool', () => {
 
   const createMockBrowser = (pid = 12345) => {
     return {
-      on: jest.fn(),
-      close: jest.fn(),
-      isConnected: jest.fn().mockReturnValue(true),
-      process: jest.fn().mockReturnValue({ pid: pid + browserCount++ }),
+      on: vi.fn(),
+      close: vi.fn(),
+      isConnected: vi.fn().mockReturnValue(true),
+      process: vi.fn().mockReturnValue({ pid: pid + browserCount++ }),
     };
   };
 
   beforeEach(() => {
     browserCount = 0;
-    jest.clearAllMocks();
+    vi.clearAllMocks();
 
     mockLogger = {
-      debug: jest.fn(),
-      info: jest.fn(),
-      warn: jest.fn(),
-      error: jest.fn(),
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
     };
 
     // Configure mocks
@@ -121,7 +123,7 @@ describe('BrowserPool', () => {
     });
 
     it('should emit initialized event', async () => {
-      const listener = jest.fn();
+      const listener = vi.fn();
       browserPool.on('initialized', listener);
 
       await browserPool.initialize();
@@ -157,7 +159,7 @@ describe('BrowserPool', () => {
     });
 
     it('should emit browser-created event', async () => {
-      const listener = jest.fn();
+      const listener = vi.fn();
       browserPool.on('browser-created', listener);
 
       const browser = await browserPool.createBrowser();
@@ -202,7 +204,7 @@ describe('BrowserPool', () => {
     });
 
     it('should emit browser-acquired event', async () => {
-      const listener = jest.fn();
+      const listener = vi.fn();
       browserPool.on('browser-acquired', listener);
 
       await browserPool.getBrowser();
@@ -243,7 +245,7 @@ describe('BrowserPool', () => {
     });
 
     it('should emit browser-released event', async () => {
-      const listener = jest.fn();
+      const listener = vi.fn();
       browserPool.on('browser-released', listener);
 
       const browser = await browserPool.getBrowser();
@@ -279,7 +281,7 @@ describe('BrowserPool', () => {
     });
 
     it('should emit closed event', async () => {
-      const listener = jest.fn();
+      const listener = vi.fn();
       browserPool.on('closed', listener);
 
       await browserPool.close();
