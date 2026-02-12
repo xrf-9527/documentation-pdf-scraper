@@ -6,7 +6,7 @@ node_modules
 __pycache__
 s
 screenshots/
-venv/
+.venv/
 .temp/
 *.log
 logs/

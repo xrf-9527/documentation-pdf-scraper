@@ -63,7 +63,7 @@ config-profiles/              # Kindle device profiles
 
 ### Core Commands
 ```bash
-make install          # Install Node + Python deps (creates venv/)
+make install          # Install Node + Python deps (creates .venv via uv)
 make run             # Scrape and generate PDFs
 npm start            # Alternative to make run
 make clean           # Remove pdfs/* and metadata
@@ -107,9 +107,9 @@ node scripts/test-config-loading.js          # Verify config validation
 
 ### Environment Info
 ```bash
-make python-info         # Show Python/pip versions
+make python-info         # Show Python/uv versions
 npm list puppeteer-extra # Verify puppeteer installation
-make clean-venv          # Remove and recreate Python venv
+make clean-venv          # Remove and recreate Python .venv
 ```
 
 ## Code Standards & Conventions
@@ -259,7 +259,7 @@ npx vitest run tests/services/fileService.test.js
 - **Pull requests:** Include clear description, linked issues, reproduction notes, before/after logs
 
 ### Ignored Files
-- Do not commit: PDFs, logs, or `venv/` (already in `.gitignore`)
+- Do not commit: PDFs, logs, or virtual env directories (`.venv/`) (already in `.gitignore`)
 
 ## Common Workflows
 

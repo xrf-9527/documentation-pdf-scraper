@@ -1,0 +1,15 @@
+[project]
+name = "documentation-pdf-scraper-python"
+version = "0.1.0"
+description = "Python runtime dependencies for documentation-pdf-scraper"
+requires-python = ">=3.8"
+dependencies = [
+  "PyMuPDF==1.24.7",
+  "psutil>=5.9.0",
+  "jsonschema>=4.17.0",
+  "pathlib2>=2.3.7",
+  "typing-extensions>=4.5.0",
+]
+
+[tool.uv]
+package = false
