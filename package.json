@@ -39,7 +39,7 @@
     "chalk": "^5.6.2",
     "joi": "^18.0.2",
     "p-limit": "^7.3.0",
-    "p-queue": "^7.4.1",
+    "p-queue": "^9.1.0",
     "pdf-lib": "^1.17.1",
     "puppeteer": "^24.37.2",
     "puppeteer-extra": "^3.3.6",
