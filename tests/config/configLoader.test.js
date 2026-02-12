@@ -1,30 +1,39 @@
+import { describe, it, test, expect, beforeAll, beforeEach, afterAll, afterEach, vi } from 'vitest';
+
 // tests/config/configLoader.test.js
 import { ConfigLoader, loadConfig, createConfigLoader } from '../../src/config/configLoader.js';
 import fs from 'fs';
 import path from 'path';
 
 // Mock dependencies
-jest.mock('fs', () => ({
-  promises: {
-    readFile: jest.fn(),
-    access: jest.fn(),
-    stat: jest.fn(),
-  },
-  constants: {
-    R_OK: 4,
-  },
+vi.mock('fs', () => {
+  const mockFs = {
+    promises: {
+      readFile: vi.fn(),
+      access: vi.fn(),
+      stat: vi.fn(),
+    },
+    constants: {
+      R_OK: 4,
+    },
+  };
+
+  return {
+    default: mockFs,
+    ...mockFs,
+  };
+});
+
+vi.mock('../../src/config/configValidator.js', () => ({
+  validateConfig: vi.fn(),
 }));
 
-jest.mock('../../src/config/configValidator.js', () => ({
-  validateConfig: jest.fn(),
-}));
-
-jest.mock('../../src/utils/logger.js', () => ({
-  createLogger: jest.fn(() => ({
-    info: jest.fn(),
-    debug: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
+vi.mock('../../src/utils/logger.js', () => ({
+  createLogger: vi.fn(() => ({
+    info: vi.fn(),
+    debug: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
   })),
 }));
 
@@ -37,7 +46,7 @@ describe('ConfigLoader', () => {
   let mockLogger;
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     mockLogger = createLogger();
     configLoader = new ConfigLoader();
   });
@@ -515,7 +524,7 @@ describe('ConfigLoader', () => {
 
 describe('便捷函数', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   describe('loadConfig', () => {

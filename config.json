@@ -4,7 +4,7 @@
   "concurrency": 5,
   "logLevel": "info",
   "python": {
-    "executable": "./venv/bin/python",
+    "executable": "./.venv/bin/python",
     "timeout": 300000
   },
   "markdown": {

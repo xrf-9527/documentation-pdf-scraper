@@ -1,11 +1,13 @@
+import { describe, it, test, expect, beforeAll, beforeEach, afterAll, afterEach, vi } from 'vitest';
+
 // tests/services/pathService.test.js
 import { PathService } from '../../src/services/pathService.js';
 import path from 'path';
 
 // Mock URL utilities
-jest.mock('../../src/utils/url.js', () => ({
-  getUrlHash: jest.fn((url) => 'a1b2c3d4'),
-  extractSubfolder: jest.fn((url) => {
+vi.mock('../../src/utils/url.js', () => ({
+  getUrlHash: vi.fn((url) => 'a1b2c3d4'),
+  extractSubfolder: vi.fn((url) => {
     if (url.includes('/app/')) {
       const match = url.match(/\/app\/([^/]+)/);
       return match ? { type: 'app', name: match[1] } : null;
@@ -29,7 +31,7 @@ describe('PathService', () => {
 
   beforeEach(() => {
     pathService = new PathService(mockConfig);
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   describe('determineDirectory', () => {
@@ -137,13 +139,15 @@ describe('PathService', () => {
   describe('getFinalPdfPath', () => {
     test('应该生成带日期的最终PDF路径', () => {
       const mockDate = new Date('2024-03-15');
-      jest.spyOn(global, 'Date').mockImplementation(() => mockDate);
+      const dateSpy = vi.spyOn(global, 'Date').mockImplementation(function MockDate() {
+        return mockDate;
+      });
 
       const finalPath = pathService.getFinalPdfPath('nextjs-docs');
 
       expect(finalPath).toBe(path.join(mockConfig.pdfDir, 'finalPdf', 'nextjs-docs_20240315.pdf'));
 
-      Date.mockRestore();
+      dateSpy.mockRestore();
     });
   });
 

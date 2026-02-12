@@ -1,3 +1,5 @@
+import { describe, it, test, expect, beforeAll, beforeEach, afterAll, afterEach, vi } from 'vitest';
+
 // tests/utils/logger.test.js
 import { createLogger, createLoggerAsync, consoleLogger } from '../../src/utils/logger.js';
 import winston from 'winston';
@@ -5,44 +7,56 @@ import fs from 'fs/promises';
 import path from 'path';
 
 // Mock winston and fs
-jest.mock('winston', () => {
+vi.mock('winston', () => {
   const mockTransports = {
-    File: jest.fn(),
-    Console: jest.fn(),
+    File: vi.fn(),
+    Console: vi.fn(),
   };
 
   const mockFormat = {
-    combine: jest.fn().mockReturnValue({}),
-    colorize: jest.fn().mockReturnValue({}),
-    simple: jest.fn().mockReturnValue({}),
-    timestamp: jest.fn().mockReturnValue({}),
-    errors: jest.fn().mockReturnValue({}),
-    json: jest.fn().mockReturnValue({}),
-    printf: jest.fn().mockReturnValue({}),
+    combine: vi.fn().mockReturnValue({}),
+    colorize: vi.fn().mockReturnValue({}),
+    simple: vi.fn().mockReturnValue({}),
+    timestamp: vi.fn().mockReturnValue({}),
+    errors: vi.fn().mockReturnValue({}),
+    json: vi.fn().mockReturnValue({}),
+    printf: vi.fn().mockReturnValue({}),
   };
 
   const mockLogger = {
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-    logProgress: jest.fn(),
+    info: vi.fn(),
+    error: vi.fn(),
+    warn: vi.fn(),
+    debug: vi.fn(),
+    logProgress: vi.fn(),
   };
 
-  return {
-    createLogger: jest.fn().mockReturnValue(mockLogger),
+  const mockWinston = {
+    createLogger: vi.fn().mockReturnValue(mockLogger),
     transports: mockTransports,
     format: mockFormat,
   };
+
+  return {
+    default: mockWinston,
+    ...mockWinston,
+  };
 });
 
-jest.mock('fs/promises', () => ({
-  mkdir: jest.fn().mockResolvedValue(undefined),
-}));
+vi.mock('fs/promises', () => {
+  const mockFsPromises = {
+    mkdir: vi.fn().mockResolvedValue(undefined),
+  };
+
+  return {
+    default: mockFsPromises,
+    ...mockFsPromises,
+  };
+});
 
 describe('Logger', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     // 重置环境变量
     delete process.env.NODE_ENV;
   });
@@ -155,7 +169,7 @@ describe('Logger', () => {
     });
 
     test('应该处理日志目录创建失败', async () => {
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation();
       fs.mkdir.mockRejectedValueOnce(new Error('Permission denied'));
 
       createLogger();
@@ -194,7 +208,7 @@ describe('Logger', () => {
     test('应该强制包含文件传输', async () => {
       const originalEnv = process.env.NODE_ENV;
       process.env.NODE_ENV = 'production'; // 设置为非测试环境
-      jest.clearAllMocks(); // 清除之前测试的mock调用
+      vi.clearAllMocks(); // 清除之前测试的mock调用
 
       await createLoggerAsync();
 
@@ -205,7 +219,7 @@ describe('Logger', () => {
     });
 
     test('应该处理目录创建错误但仍返回logger', async () => {
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation();
       fs.mkdir.mockRejectedValueOnce(new Error('Permission denied'));
 
       const logger = await createLoggerAsync();
@@ -233,9 +247,9 @@ describe('Logger', () => {
 
     beforeEach(() => {
       consoleSpy = {
-        log: jest.spyOn(console, 'log').mockImplementation(),
-        warn: jest.spyOn(console, 'warn').mockImplementation(),
-        error: jest.spyOn(console, 'error').mockImplementation(),
+        log: vi.spyOn(console, 'log').mockImplementation(),
+        warn: vi.spyOn(console, 'warn').mockImplementation(),
+        error: vi.spyOn(console, 'error').mockImplementation(),
       };
     });
 

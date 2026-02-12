@@ -23,7 +23,7 @@ _This file contains critical rules and patterns that AI agents must follow when 
 - **Browser Automation:** Puppeteer-extra with stealth plugin
 - **PDF Processing:** Pandoc CLI with xelatex engine
 - **PDF Merging:** Python PyMuPDF (fitz)
-- **Testing:** Jest with Babel (516+ tests required)
+- **Testing:** Vitest (516+ tests required)
 
 ### Critical Version Requirements
 - Node.js 18.18+ is MANDATORY for ESLint 9.x compatibility
@@ -126,10 +126,10 @@ make clean && make test && make lint
 - Zero linting errors
 - Always `make clean` before testing
 
-**Jest Warnings:** If you see "open handles" warnings:
+**Vitest Warnings:** If you see "open handles" warnings:
 - Call `clearTimeout(timeoutId)` in finally blocks
 - Use `timeoutId.unref?.()` for protective timers
-- Call `jest.useRealTimers()` after fake timer tests
+- Call `vi.useRealTimers()` after fake timer tests
 
 ### 7. Anti-Bot Bypass - Puppeteer Stealth
 
@@ -265,7 +265,7 @@ try {
 | TOC missing in merged PDF | Scrape before merge | Check `articleTitles.json` size >1KB |
 | Wrong selectors from curl | Use Puppeteer inspector | `node scripts/inspect-selectors.js` |
 | Code blocks overflow PDF | Already handled in `pandocPdfService.js` | Test with long samples |
-| Jest open handles warning | Clear timers, use `unref()` | `npm test --detectOpenHandles` |
+| Vitest open handles warning | Clear timers, use `unref()` | `npm test -- --reporter=hanging-process --maxWorkers=1` |
 | Wrong service for titles | Use `metadataService` only | Follow SSOT table above |
 
 ---

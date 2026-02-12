@@ -1,6 +1,6 @@
-import { jest } from '@jest/globals';
+import { describe, it, test, expect, beforeAll, beforeEach, afterAll, afterEach, vi } from 'vitest';
 
-// Since PythonMergeService uses import.meta.url which is incompatible with Jest,
+// PythonMergeService uses import.meta.url, so this mock stays ESM-friendly for Vitest.
 // we'll create a comprehensive mock test that validates the expected behavior
 
 describe('PythonMergeService', () => {
@@ -17,11 +17,11 @@ describe('PythonMergeService', () => {
       constructor(config = {}, logger = null) {
         this.config = config;
         this.logger = logger || {
-          debug: jest.fn(),
-          info: jest.fn(),
-          warn: jest.fn(),
-          warning: jest.fn(),
-          error: jest.fn(),
+          debug: vi.fn(),
+          info: vi.fn(),
+          warn: vi.fn(),
+          warning: vi.fn(),
+          error: vi.fn(),
         };
 
         this.pythonConfig = {
@@ -46,16 +46,16 @@ describe('PythonMergeService', () => {
 
         // Mock EventEmitter methods
         this._events = {};
-        this.on = jest.fn((event, handler) => {
+        this.on = vi.fn((event, handler) => {
           if (!this._events[event]) this._events[event] = [];
           this._events[event].push(handler);
         });
-        this.emit = jest.fn((event, ...args) => {
+        this.emit = vi.fn((event, ...args) => {
           if (this._events[event]) {
             this._events[event].forEach((handler) => handler(...args));
           }
         });
-        this.removeAllListeners = jest.fn();
+        this.removeAllListeners = vi.fn();
       }
 
       async validateEnvironment() {
@@ -215,7 +215,7 @@ describe('PythonMergeService', () => {
       }
 
       async _executePythonWithProgress(args) {
-        this.currentProcess = { kill: jest.fn() };
+        this.currentProcess = { kill: vi.fn() };
 
         // Simulate progress
         setTimeout(() => {
@@ -296,7 +296,7 @@ describe('PythonMergeService', () => {
     };
 
     // Setup mocks
-    mockSpawn = jest.fn((args) => {
+    mockSpawn = vi.fn((args) => {
       return Promise.resolve({
         exitCode: 0,
         stdout: '{"success": true, "filesProcessed": 10, "totalPages": 50}',
@@ -304,7 +304,7 @@ describe('PythonMergeService', () => {
       });
     });
 
-    mockFsAccess = jest.fn(() => Promise.resolve());
+    mockFsAccess = vi.fn(() => Promise.resolve());
 
     pythonMergeService = new PythonMergeService({
       python: { executable: 'python3', timeout: 5000 },
@@ -314,7 +314,7 @@ describe('PythonMergeService', () => {
   });
 
   afterEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   describe('constructor', () => {
@@ -414,8 +414,8 @@ describe('PythonMergeService', () => {
     });
 
     it('should emit events', async () => {
-      const startListener = jest.fn();
-      const completeListener = jest.fn();
+      const startListener = vi.fn();
+      const completeListener = vi.fn();
 
       pythonMergeService.on('mergeStarted', startListener);
       pythonMergeService.on('mergeCompleted', completeListener);
@@ -468,7 +468,7 @@ describe('PythonMergeService', () => {
   describe('stopMerge', () => {
     it('should stop running merge', async () => {
       pythonMergeService.isRunning = true;
-      pythonMergeService.currentProcess = { kill: jest.fn() };
+      pythonMergeService.currentProcess = { kill: vi.fn() };
 
       const result = await pythonMergeService.stopMerge();
 
@@ -538,16 +538,16 @@ describe('PythonMergeService', () => {
           let timeoutHandle = null;
 
           const mockProcess = {
-            stdout: { on: jest.fn() },
-            stderr: { on: jest.fn() },
-            on: jest.fn((event, handler) => {
+            stdout: { on: vi.fn() },
+            stderr: { on: vi.fn() },
+            on: vi.fn((event, handler) => {
               if (event === 'close') {
                 mockProcess._closeHandler = handler;
               } else if (event === 'error') {
                 mockProcess._errorHandler = handler;
               }
             }),
-            kill: jest.fn(),
+            kill: vi.fn(),
             killed: false,
             _closeHandler: null,
             _errorHandler: null,
@@ -629,7 +629,7 @@ describe('PythonMergeService', () => {
     });
 
     it('should clear timeout on successful completion', async () => {
-      const clearTimeoutSpy = jest.spyOn(global, 'clearTimeout');
+      const clearTimeoutSpy = vi.spyOn(global, 'clearTimeout');
 
       // Start execution
       const promise = pythonMergeService._executePython(['test.py']);
@@ -645,7 +645,7 @@ describe('PythonMergeService', () => {
     });
 
     it('should clear timeout on process error', async () => {
-      const clearTimeoutSpy = jest.spyOn(global, 'clearTimeout');
+      const clearTimeoutSpy = vi.spyOn(global, 'clearTimeout');
 
       // Start execution
       const promise = pythonMergeService._executePython(['test.py']);
@@ -663,7 +663,7 @@ describe('PythonMergeService', () => {
     });
 
     it('should prevent double rejection when timeout fires after close', async () => {
-      jest.useFakeTimers();
+      vi.useFakeTimers();
 
       // Set a short timeout for testing
       pythonMergeService.pythonConfig.timeout = 100;
@@ -672,7 +672,7 @@ describe('PythonMergeService', () => {
       const promise = pythonMergeService._executePython(['test.py']);
 
       // Fast-forward to trigger timeout
-      jest.advanceTimersByTime(100);
+      vi.advanceTimersByTime(100);
 
       // Should reject with timeout error
       await expect(promise).rejects.toMatchObject({
@@ -687,11 +687,11 @@ describe('PythonMergeService', () => {
       // Verify settled flag prevents double resolution
       expect(pythonMergeService._testMockProcess._settled()).toBe(true);
 
-      jest.useRealTimers();
+      vi.useRealTimers();
     });
 
     it('should not reject after successful resolution', async () => {
-      jest.useFakeTimers();
+      vi.useFakeTimers();
 
       pythonMergeService.pythonConfig.timeout = 1000;
 
@@ -705,12 +705,12 @@ describe('PythonMergeService', () => {
       expect(result.exitCode).toBe(0);
 
       // Fast-forward past timeout
-      jest.advanceTimersByTime(1000);
+      vi.advanceTimersByTime(1000);
 
       // Should not cause any issues (timeout callback checks settled flag)
-      jest.runAllTimers();
+      vi.runAllTimers();
 
-      jest.useRealTimers();
+      vi.useRealTimers();
     });
   });
 });

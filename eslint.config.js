@@ -9,7 +9,7 @@ export default defineConfig([
   { files: ["**/*.{js,mjs,cjs}"], languageOptions: { globals: {...globals.browser, ...globals.node} } },
   {
     files: ["tests/**/*.{js,mjs,cjs}"],
-    languageOptions: { globals: { ...globals.node, ...globals.jest } },
+    languageOptions: { globals: { ...globals.node } },
     rules: { "no-unused-vars": "off" },
   },
   {

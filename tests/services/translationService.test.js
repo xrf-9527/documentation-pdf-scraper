@@ -1,18 +1,20 @@
+import { describe, it, test, expect, beforeAll, beforeEach, afterAll, afterEach, vi } from 'vitest';
+
 // tests/services/translationService.test.js
 import fs from 'fs';
 import path from 'path';
 import { TranslationService } from '../../src/services/translationService.js';
 
-// Mock p-limit (ESM-only) to avoid Jest ESM parsing issues
-jest.mock('p-limit', () => {
-  return jest.fn(() => {
+// Mock p-limit (ESM default export)
+vi.mock('p-limit', () => ({
+  default: vi.fn(() => {
     const limit = (fn, ...args) => fn(...args);
     limit.activeCount = 0;
     limit.pendingCount = 0;
     limit.clearQueue = () => {};
     return limit;
-  });
-});
+  }),
+}));
 
 describe('TranslationService', () => {
   const baseConfig = {
@@ -29,37 +31,46 @@ describe('TranslationService', () => {
   };
 
   const logger = {
-    debug: jest.fn(),
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
   };
 
   const cacheDir = path.join(process.cwd(), '.temp', 'translation_cache');
+  const createdServices = [];
+
+  const createService = (options) => {
+    const service = new TranslationService(options);
+    createdServices.push(service);
+    return service;
+  };
 
   beforeEach(() => {
-    // 清理缓存目录，避免不同测试之间互相影响
-    if (fs.existsSync(cacheDir)) {
-      fs.rmSync(cacheDir, { recursive: true, force: true });
-    }
+    createdServices.length = 0;
+    fs.rmSync(cacheDir, { recursive: true, force: true });
+  });
+
+  afterEach(async () => {
+    await Promise.allSettled(createdServices.map((service) => service.cacheInitPromise));
+    await Promise.allSettled(createdServices.map((service) => service._flushCacheWrites()));
+    createdServices.length = 0;
+    fs.rmSync(cacheDir, { recursive: true, force: true });
   });
 
   afterAll(() => {
-    // 测试结束后清理缓存目录
-    if (fs.existsSync(cacheDir)) {
-      fs.rmSync(cacheDir, { recursive: true, force: true });
-    }
+    fs.rmSync(cacheDir, { recursive: true, force: true });
   });
 
   test('_getCacheKey 应该是稳定且区分模式的', () => {
-    const service = new TranslationService({ config: baseConfig, logger });
+    const service = createService({ config: baseConfig, logger });
     const text = 'Hello world';
 
     const key1 = service._getCacheKey(text);
     const key2 = service._getCacheKey(text);
     expect(key1).toBe(key2);
 
-    const bilingualService = new TranslationService({
+    const bilingualService = createService({
       config: {
         ...baseConfig,
         translation: {
@@ -75,7 +86,7 @@ describe('TranslationService', () => {
   });
 
   test('_saveToCache 和 _getFromCache 应该能正确读写缓存', async () => {
-    const service = new TranslationService({ config: baseConfig, logger });
+    const service = createService({ config: baseConfig, logger });
     const text = 'Some text';
     const translation = '某些文本';
 
@@ -92,7 +103,7 @@ describe('TranslationService', () => {
   });
 
   test('构造函数在缺少翻译配置时应该使用默认超时与重试参数', () => {
-    const service = new TranslationService({
+    const service = createService({
       config: {
         logLevel: 'error',
         translation: {
@@ -108,7 +119,7 @@ describe('TranslationService', () => {
   });
 
   test('translateMarkdown 应该保留 frontmatter 和代码块，并在双语模式下追加译文', async () => {
-    const service = new TranslationService({
+    const service = createService({
       config: {
         logLevel: 'error',
         translation: {
@@ -125,7 +136,7 @@ describe('TranslationService', () => {
     });
 
     // 替换实际的批量翻译，实现一个可预测的伪翻译
-    service._translateBatchWithRetry = jest.fn(async (batch) => {
+    service._translateBatchWithRetry = vi.fn(async (batch) => {
       const result = {};
       batch.forEach((seg) => {
         result[seg.id] = `T(${seg.text})`;
@@ -164,7 +175,7 @@ describe('TranslationService', () => {
   });
 
   test('translateMarkdown 应该将中文句子内部的 `_字_` 规范化为 `*字*` 以符合 Pandoc/Markdown 最佳实践', async () => {
-    const service = new TranslationService({
+    const service = createService({
       config: {
         logLevel: 'error',
         translation: {
@@ -181,7 +192,7 @@ describe('TranslationService', () => {
     });
 
     // 伪造翻译结果：英文原文被翻译成包含中文 `_更_` 的句子
-    service._translateBatchWithRetry = jest.fn(async (batch) => {
+    service._translateBatchWithRetry = vi.fn(async (batch) => {
       const result = {};
       batch.forEach((seg) => {
         if (seg.text.includes('iterating with Claude has been')) {
@@ -216,7 +227,7 @@ describe('TranslationService', () => {
   });
 
   test('translateMarkdown 应为图片行添加译文图注但不复制图片', async () => {
-    const service = new TranslationService({
+    const service = createService({
       config: {
         ...baseConfig,
         translation: {
@@ -229,7 +240,7 @@ describe('TranslationService', () => {
     });
 
     // 替换实际的批量翻译，实现一个可预测的伪翻译
-    const batchSpy = jest.fn(async (batch) => {
+    const batchSpy = vi.fn(async (batch) => {
       const result = {};
       batch.forEach((seg) => {
         result[seg.id] = `T(${seg.text})`;
@@ -265,7 +276,7 @@ describe('TranslationService', () => {
   });
 
   test('constructor should preserve explicit 0 values in translation config', () => {
-    const service = new TranslationService({
+    const service = createService({
       config: {
         logLevel: 'error',
         translation: {
@@ -284,7 +295,7 @@ describe('TranslationService', () => {
   });
 
   test('_translateBatchWithRetry should not treat empty-string translations as failures', async () => {
-    const service = new TranslationService({ config: baseConfig, logger });
+    const service = createService({ config: baseConfig, logger });
 
     const batch = [
       { id: 'seg1', text: 'Text 1' },
@@ -297,8 +308,8 @@ describe('TranslationService', () => {
       seg2: 'Translated 2',
     };
 
-    service._translateBatch = jest.fn(async () => batchResult);
-    service._translateSingleSegment = jest.fn();
+    service._translateBatch = vi.fn(async () => batchResult);
+    service._translateSingleSegment = vi.fn();
 
     const result = await service._translateBatchWithRetry(batch);
 

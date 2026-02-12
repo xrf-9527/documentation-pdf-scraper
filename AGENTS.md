@@ -63,7 +63,7 @@ config-profiles/              # Kindle device profiles
 
 ### Core Commands
 ```bash
-make install          # Install Node + Python deps (creates venv/)
+make install          # Install Node + Python deps (creates .venv via uv)
 make run             # Scrape and generate PDFs
 npm start            # Alternative to make run
 make clean           # Remove pdfs/* and metadata
@@ -72,7 +72,9 @@ make clean-cache     # Remove translation cache and metadata (keep PDFs)
 
 ### Testing & Quality
 ```bash
-npm test             # Run all Jest tests
+npm test             # Run all Vitest tests
+npm run test:watch   # Run tests in watch mode
+npm run test:coverage # Run tests with coverage
 make test            # Same as npm test
 npm run lint         # ESLint checks
 npm run lint:fix     # Auto-fix linting issues
@@ -105,9 +107,9 @@ node scripts/test-config-loading.js          # Verify config validation
 
 ### Environment Info
 ```bash
-make python-info         # Show Python/pip versions
+make python-info         # Show Python/uv versions
 npm list puppeteer-extra # Verify puppeteer installation
-make clean-venv          # Remove and recreate Python venv
+make clean-venv          # Remove and recreate Python .venv
 ```
 
 ## Code Standards & Conventions
@@ -144,7 +146,7 @@ make clean-venv          # Remove and recreate Python venv
 ## Testing Guidelines
 
 ### Framework & Structure
-- **Framework:** Jest with Babel
+- **Framework:** Vitest
 - **Location:** `tests/**/*.test.js`
 - **Structure:** Mirror source directory (e.g., `src/core/setup.js` → `tests/core/setup.test.js`)
 
@@ -160,27 +162,27 @@ make clean-venv          # Remove and recreate Python venv
 npm test
 
 # Watch mode during development
-npm test -- --watch
+npm run test:watch
 
 # Run specific test file
-npm test -- tests/services/fileService.test.js
+npx vitest run tests/services/fileService.test.js
 ```
 
-### Jest & Open Handles（异步 / 定时器注意事项）
+### Vitest & Open Handles（异步 / 定时器注意事项）
 
-- 测试或被测代码里如果创建了长时间存活的定时器 / 句柄，需要**显式清理或解除对事件循环的保持**，否则 Jest 会在结束时报：
+- 测试或被测代码里如果创建了长时间存活的定时器 / 句柄，需要**显式清理或解除对事件循环的保持**，否则 Vitest 会在结束时报：
   - `A worker process has failed to exit gracefully...`
-  - 或 `Jest has detected the following open handles...`
+  - 或 hanging process / unhandled errors 相关提示
 - 推荐做法：
   - 对超时保护类定时器：
     - 保存 `setTimeout` 返回的 ID，在 `try/finally` 中 `clearTimeout(timeoutId)`；
-    - 如只是保护性定时器，又不要求阻止进程退出，可调用 `timeoutId.unref?.()`，避免影响 Node/Jest 退出。
-  - 在 Jest 测试中使用 fake timers 时（`jest.useFakeTimers()`）：
-    - 测试结束前调用 `jest.useRealTimers()`；
-    - 必要时配合 `jest.runAllTimers()` / `jest.advanceTimersByTime()` 来驱动定时逻辑。
+    - 如只是保护性定时器，又不要求阻止进程退出，可调用 `timeoutId.unref?.()`，避免影响 Node/Vitest 进程退出。
+  - 在 Vitest 测试中使用 fake timers 时（`vi.useFakeTimers()`）：
+    - 测试结束前调用 `vi.useRealTimers()`；
+    - 必要时配合 `vi.runAllTimers()` / `vi.advanceTimersByTime()` 来驱动定时逻辑。
 - 如果遇到疑似泄漏，可用：
-  - `npx jest --runInBand --detectOpenHandles`
-  - 或只对某个测试文件运行：`npx jest tests/services/translationService.test.js --runInBand --detectOpenHandles`
+  - `npx vitest run --reporter=hanging-process --maxWorkers=1`
+  - 或只对某个测试文件运行：`npx vitest run tests/services/translationService.test.js --reporter=hanging-process --maxWorkers=1`
   来定位具体未清理的 handle。
 
 ## Configuration
@@ -257,7 +259,7 @@ npm test -- tests/services/fileService.test.js
 - **Pull requests:** Include clear description, linked issues, reproduction notes, before/after logs
 
 ### Ignored Files
-- Do not commit: PDFs, logs, or `venv/` (already in `.gitignore`)
+- Do not commit: PDFs, logs, or virtual env directories (`.venv/`) (already in `.gitignore`)
 
 ## Common Workflows
 

@@ -1,20 +1,21 @@
+import { describe, it, test, expect, beforeAll, beforeEach, afterAll, afterEach, vi } from 'vitest';
+
 // tests/services/geminiClient.test.js
-import { jest } from '@jest/globals';
 import { EventEmitter } from 'events';
 import { GeminiClient } from '../../src/services/geminiClient.js';
 
 describe('GeminiClient', () => {
   const createLogger = () => ({
-    debug: jest.fn(),
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
   });
 
   test('translateJson 应该解析有效的 JSON 输出', async () => {
     const logger = createLogger();
 
-    const spawn = jest.fn(() => {
+    const spawn = vi.fn(() => {
       const stdout = new EventEmitter();
       const stderr = new EventEmitter();
       const handlers = {};
@@ -23,10 +24,10 @@ describe('GeminiClient', () => {
         stdout,
         stderr,
         stdin: {
-          write: jest.fn(),
-          end: jest.fn(),
+          write: vi.fn(),
+          end: vi.fn(),
         },
-        kill: jest.fn(),
+        kill: vi.fn(),
         on: (event, handler) => {
           handlers[event] = handler;
         },
@@ -62,7 +63,7 @@ describe('GeminiClient', () => {
   test('当子进程退出码非 0 时应该抛出错误', async () => {
     const logger = createLogger();
 
-    const spawn = jest.fn(() => {
+    const spawn = vi.fn(() => {
       const stdout = new EventEmitter();
       const stderr = new EventEmitter();
       const handlers = {};
@@ -71,10 +72,10 @@ describe('GeminiClient', () => {
         stdout,
         stderr,
         stdin: {
-          write: jest.fn(),
-          end: jest.fn(),
+          write: vi.fn(),
+          end: vi.fn(),
         },
-        kill: jest.fn(),
+        kill: vi.fn(),
         on: (event, handler) => {
           handlers[event] = handler;
         },

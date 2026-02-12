@@ -1,9 +1,8 @@
 # Makefile for Next.js PDF Documentation Scraper
 
-PYTHON = python3
-VENV_DIR = venv
-VENV_PYTHON = $(VENV_DIR)/bin/python
-VENV_PIP = $(VENV_DIR)/bin/pip
+UV = uv
+UV_ENV_DIR = .venv
+UV_PYTHON = $(UV_ENV_DIR)/bin/python
 NODE_MODULES = node_modules
 
 .PHONY: help install install-python install-node venv clean-venv clean clean-all clean-cache run run-clean test demo lint lint-fix ci verify-openclaw verify-openclaw-ci check-venv python-info kindle7 kindle-paperwhite kindle-oasis kindle-scribe kindle-all reset-config list-configs clean-kindle docs-openai docs-claude docs-openclaw docs-cloudflare docs-anthropic docs-53ai docs-claude-blog docs-current
@@ -11,10 +10,10 @@ NODE_MODULES = node_modules
 help:
 	@echo "Available commands:"
 	@echo "  install        - Install all dependencies (Python + Node.js)"
-	@echo "  install-python - Create virtual environment and install Python dependencies"
+	@echo "  install-python - Create uv virtual environment and install Python dependencies"
 	@echo "  install-node   - Install Node.js dependencies"
-	@echo "  venv          - Create Python virtual environment"
-	@echo "  clean-venv    - Remove and recreate Python virtual environment"
+	@echo "  venv          - Create uv-managed Python virtual environment"
+	@echo "  clean-venv    - Remove and recreate uv Python virtual environment"
 	@echo "  run           - Generate PDF documentation"
 	@echo "  run-clean     - Clean output and generate PDF documentation"
 	@echo "  test          - Run tests"
@@ -45,37 +44,35 @@ help:
 	@echo "  docs-claude-blog  - Apply Claude Blog configuration"
 	@echo "  docs-current      - Show current doc configuration"
 
-# Create Python virtual environment with enhanced checking
+# Create Python virtual environment with uv
 venv:
-	@echo "\033[0;34m=== Creating Python Virtual Environment ===\033[0m"
-	@if ! command -v $(PYTHON) >/dev/null 2>&1; then \
-		echo "\033[0;31mError: python3 not found\033[0m"; \
-		echo "\033[1;33mPlease install Python 3: sudo apt install python3 python3-venv python3-pip\033[0m"; \
+	@echo "\033[0;34m=== Creating uv Python Virtual Environment ===\033[0m"
+	@if ! command -v $(UV) >/dev/null 2>&1; then \
+		echo "\033[0;31mError: uv not found\033[0m"; \
+		echo "\033[1;33mInstall uv from https://github.com/astral-sh/uv\033[0m"; \
 		exit 1; \
 	fi
-	@if [ ! -f "requirements.txt" ]; then \
-		echo "\033[0;31mError: requirements.txt not found in current directory\033[0m"; \
+	@if [ ! -f "pyproject.toml" ]; then \
+		echo "\033[0;31mError: pyproject.toml not found in current directory\033[0m"; \
 		exit 1; \
 	fi
-	@if [ -d "$(VENV_DIR)" ]; then \
-		echo "\033[1;33mVirtual environment already exists at $(VENV_DIR)\033[0m"; \
+	@if [ -d "$(UV_ENV_DIR)" ]; then \
+		echo "\033[1;33mVirtual environment already exists at $(UV_ENV_DIR)\033[0m"; \
 		echo "\033[1;33mRun 'make clean-venv' first to recreate it\033[0m"; \
 	else \
-		echo "\033[0;34mCreating virtual environment at $(VENV_DIR)...\033[0m"; \
-		$(PYTHON) -m venv $(VENV_DIR) || (echo "\033[0;31mFailed to create virtual environment\033[0m"; exit 1); \
+		echo "\033[0;34mCreating virtual environment at $(UV_ENV_DIR)...\033[0m"; \
+		$(UV) venv $(UV_ENV_DIR) || (echo "\033[0;31mFailed to create virtual environment\033[0m"; exit 1); \
 		echo "\033[0;32m✅ Virtual environment created successfully!\033[0m"; \
 	fi
 
 # Install Python dependencies in virtual environment
 install-python: venv
 	@echo "\033[0;34m=== Installing Python Dependencies ===\033[0m"
-	@echo "\033[0;34mUpgrading pip...\033[0m"
-	@$(VENV_PIP) install --upgrade pip
-	@echo "\033[0;34mInstalling project dependencies...\033[0m"
-	@$(VENV_PIP) install -r requirements.txt
+	@echo "\033[0;34mSyncing dependencies with uv...\033[0m"
+	@$(UV) sync --locked
 	@echo "\033[0;32m✅ Python dependencies installed successfully!\033[0m"
 	@echo "\033[0;34m=== Usage Instructions ===\033[0m"
-	@echo "\033[1;33m1. Activate virtual environment:\033[0m source venv/bin/activate"
+	@echo "\033[1;33m1. Activate virtual environment:\033[0m source .venv/bin/activate"
 	@echo "\033[1;33m2. Run the project:\033[0m make run"
 	@echo "\033[1;33m3. Deactivate virtual environment:\033[0m deactivate"
 
@@ -136,7 +133,7 @@ lint-fix:
 # Clean and recreate Python virtual environment
 clean-venv:
 	@echo "\033[1;33mRemoving existing Python virtual environment...\033[0m"
-	@rm -rf $(VENV_DIR)
+	@rm -rf $(UV_ENV_DIR)
 	@echo "\033[0;32mVirtual environment removed\033[0m"
 	@$(MAKE) install-python
 
@@ -154,26 +151,26 @@ clean-cache:
 # Clean all generated files and dependencies
 clean-all: clean
 	@echo "Removing Python virtual environment..."
-	rm -rf $(VENV_DIR)
+	rm -rf $(UV_ENV_DIR)
 	@echo "Removing Node.js dependencies..."
 	rm -rf $(NODE_MODULES)
 	@echo "All dependencies and generated files removed"
 
 # Check if virtual environment exists
 check-venv:
-	@if [ ! -d "$(VENV_DIR)" ]; then \
+	@if [ ! -d "$(UV_ENV_DIR)" ]; then \
 		echo "Virtual environment not found. Run 'make install-python' first."; \
 		exit 1; \
 	fi
 
 # Show Python environment info
 python-info: check-venv
-	@echo "Python virtual environment info:"
-	@echo "Python executable: $(VENV_PYTHON)"
-	@echo "Python version: $$($(VENV_PYTHON) --version)"
-	@echo "Pip version: $$($(VENV_PIP) --version)"
+	@echo "Python virtual environment info (uv):"
+	@echo "uv version: $$($(UV) --version)"
+	@echo "Python executable: $(UV_PYTHON)"
+	@echo "Python version: $$($(UV_PYTHON) --version)"
 	@echo "Installed packages:"
-	@$(VENV_PIP) list
+	@$(UV) pip list --python $(UV_PYTHON)
 
 # Kindle PDF optimization commands
 CONFIG_SCRIPT = scripts/use-kindle-config.js

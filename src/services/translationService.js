@@ -565,7 +565,7 @@ export class TranslationService {
                 () => reject(new Error(`Batch ${batchIndex + 1} timeout after ${batchTimeout}ms`)),
                 batchTimeout
               );
-              // 避免测试环境中因挂起的定时器导致 Jest 报告 open handles
+              // 避免测试环境中因挂起的定时器导致测试运行器报告 open handles
               if (batchTimeoutId && typeof batchTimeoutId.unref === 'function') {
                 batchTimeoutId.unref();
               }

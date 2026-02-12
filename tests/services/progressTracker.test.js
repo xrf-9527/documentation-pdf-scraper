@@ -1,17 +1,26 @@
+import { describe, it, test, expect, beforeAll, beforeEach, afterAll, afterEach, vi } from 'vitest';
+
 // tests/services/progressTracker.test.js
 import { ProgressTracker } from '../../src/services/progressTracker.js';
 import { EventEmitter } from 'events';
 import chalk from 'chalk';
 
 // Mock chalk to avoid color codes in tests
-jest.mock('chalk', () => ({
-  green: jest.fn((text) => text),
-  red: jest.fn((text) => text),
-  yellow: jest.fn((text) => text),
-  cyan: jest.fn((text) => text),
-  gray: jest.fn((text) => text),
-  bold: jest.fn((text) => text),
-}));
+vi.mock('chalk', () => {
+  const mockChalk = {
+    green: vi.fn((text) => text),
+    red: vi.fn((text) => text),
+    yellow: vi.fn((text) => text),
+    cyan: vi.fn((text) => text),
+    gray: vi.fn((text) => text),
+    bold: vi.fn((text) => text),
+  };
+
+  return {
+    default: mockChalk,
+    ...mockChalk,
+  };
+});
 
 describe('ProgressTracker', () => {
   let progressTracker;
@@ -19,24 +28,24 @@ describe('ProgressTracker', () => {
 
   beforeEach(() => {
     mockLogger = {
-      info: jest.fn(),
-      warn: jest.fn(),
-      error: jest.fn(),
-      debug: jest.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
     };
 
     progressTracker = new ProgressTracker(mockLogger);
 
-    jest.clearAllTimers();
-    jest.useFakeTimers();
-    jest.spyOn(console, 'log').mockImplementation();
+    vi.clearAllTimers();
+    vi.useFakeTimers();
+    vi.spyOn(console, 'log').mockImplementation();
   });
 
   afterEach(() => {
     if (progressTracker.progressInterval) {
       progressTracker.stopProgressDisplay();
     }
-    jest.useRealTimers();
+    vi.useRealTimers();
     console.log.mockRestore();
   });
 
@@ -142,7 +151,7 @@ describe('ProgressTracker', () => {
 
     test('应该更新ETA', () => {
       progressTracker.start(10);
-      jest.spyOn(progressTracker, 'updateETA');
+      vi.spyOn(progressTracker, 'updateETA');
 
       progressTracker.success('http://example.com');
 
@@ -272,7 +281,7 @@ describe('ProgressTracker', () => {
         progressTracker.once('finish', resolve);
       });
 
-      jest.spyOn(progressTracker, 'displayFinalReport');
+      vi.spyOn(progressTracker, 'displayFinalReport');
 
       progressTracker.finish();
 
@@ -286,7 +295,7 @@ describe('ProgressTracker', () => {
 
     test('应该停止进度显示', () => {
       progressTracker.start(10);
-      jest.spyOn(progressTracker, 'stopProgressDisplay');
+      vi.spyOn(progressTracker, 'stopProgressDisplay');
 
       progressTracker.finish();
 
@@ -433,7 +442,7 @@ describe('ProgressTracker', () => {
       progressTracker.startProgressDisplay();
 
       // 快进5秒
-      jest.advanceTimersByTime(5000);
+      vi.advanceTimersByTime(5000);
 
       expect(console.log).toHaveBeenCalledWith(
         expect.stringContaining('处理中: http://current.com')
@@ -480,7 +489,7 @@ describe('ProgressTracker', () => {
   describe('exportDetailedReport', () => {
     test('应该导出详细报告', async () => {
       const mockFileService = {
-        writeJson: jest.fn(),
+        writeJson: vi.fn(),
       };
 
       progressTracker.start(10);

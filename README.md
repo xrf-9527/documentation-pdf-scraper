@@ -20,13 +20,14 @@ A professional web scraper and PDF generator that converts documentation website
 ### Installation
 
 ```bash
-# Install all dependencies (Node.js + Python venv)
+# Install all dependencies (Node.js + Python via uv)
 make install
 ```
 
 ### Prerequisites
 - Node.js >= 18.0.0
 - Python >= 3.8 (for PDF processing)
+- uv (Python package/environment manager)
 - Pandoc (required for Markdown-to-PDF conversion)
 
 ## Usage

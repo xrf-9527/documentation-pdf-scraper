@@ -1,16 +1,18 @@
+import { describe, it, test, expect, beforeAll, beforeEach, afterAll, afterEach, vi } from 'vitest';
+
 // tests/services/markdownService.test.js
 import { MarkdownService } from '../../src/services/markdownService.js';
 
 describe('MarkdownService', () => {
   const logger = {
-    debug: jest.fn(),
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
   };
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   test('convertHtmlToMarkdown 应该将简单 HTML 转为 Markdown', () => {
@@ -131,7 +133,7 @@ describe('MarkdownService', () => {
   test('extractAndConvertPage 应该调用 page.evaluate 并返回 Markdown', async () => {
     const service = new MarkdownService({ logger });
     const page = {
-      evaluate: jest.fn(async () => ({
+      evaluate: vi.fn(async () => ({
         html: '<h1>Title</h1><p>Body</p>',
         svgCount: 0,
       })),

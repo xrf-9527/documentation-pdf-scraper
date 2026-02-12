@@ -1,3 +1,5 @@
+import { describe, it, test, expect, beforeAll, beforeEach, afterAll, afterEach, vi } from 'vitest';
+
 // tests/services/metadataService.test.js
 import { MetadataService } from '../../src/services/metadataService.js';
 
@@ -10,21 +12,21 @@ describe('MetadataService', () => {
   beforeEach(() => {
     // Mock dependencies
     mockFileService = {
-      readJson: jest.fn(),
-      writeJson: jest.fn(),
-      updateJson: jest.fn(),
-      appendToJsonArray: jest.fn(),
-      removeFromJsonArray: jest.fn(),
+      readJson: vi.fn(),
+      writeJson: vi.fn(),
+      updateJson: vi.fn(),
+      appendToJsonArray: vi.fn(),
+      removeFromJsonArray: vi.fn(),
     };
 
     mockPathService = {
-      getMetadataPath: jest.fn((type) => `/metadata/${type}.json`),
+      getMetadataPath: vi.fn((type) => `/metadata/${type}.json`),
     };
 
     mockLogger = {
-      debug: jest.fn(),
-      info: jest.fn(),
-      warn: jest.fn(),
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
     };
 
     metadataService = new MetadataService(mockFileService, mockPathService, mockLogger);
@@ -32,7 +34,7 @@ describe('MetadataService', () => {
 
   describe('saveArticleTitle', () => {
     test('saveArticleTitle should use atomic updateJson instead of read+write', async () => {
-      mockFileService.updateJson = jest.fn().mockResolvedValue({});
+      mockFileService.updateJson = vi.fn().mockResolvedValue({});
 
       await metadataService.saveArticleTitle(2, '标题');
 
@@ -116,7 +118,9 @@ describe('MetadataService', () => {
     test('应该记录失败的链接', async () => {
       const error = new Error('Network error');
       const mockDate = new Date('2024-03-15T10:00:00Z');
-      jest.spyOn(global, 'Date').mockImplementation(() => mockDate);
+      const dateSpy = vi.spyOn(global, 'Date').mockImplementation(function MockDate() {
+        return mockDate;
+      });
 
       await metadataService.logFailedLink('http://example.com', 5, error);
 
@@ -131,7 +135,7 @@ describe('MetadataService', () => {
         error: 'Network error',
       });
 
-      Date.mockRestore();
+      dateSpy.mockRestore();
     });
 
     test('应该处理字符串错误', async () => {
@@ -205,7 +209,9 @@ describe('MetadataService', () => {
     test('应该记录新的图片加载失败', async () => {
       mockFileService.readJson.mockResolvedValue([]);
       const mockDate = new Date('2024-03-15T10:00:00Z');
-      jest.spyOn(global, 'Date').mockImplementation(() => mockDate);
+      const dateSpy = vi.spyOn(global, 'Date').mockImplementation(function MockDate() {
+        return mockDate;
+      });
 
       await metadataService.logImageLoadFailure('http://example.com/image.jpg', 3);
 
@@ -222,7 +228,7 @@ describe('MetadataService', () => {
         '记录图片加载失败: http://example.com/image.jpg'
       );
 
-      Date.mockRestore();
+      dateSpy.mockRestore();
     });
 
     test('应该避免重复记录', async () => {
@@ -278,7 +284,9 @@ describe('MetadataService', () => {
         'http://old.com': { path: '/pdfs/old.pdf' },
       });
       const mockDate = new Date('2024-03-15T10:00:00Z');
-      jest.spyOn(global, 'Date').mockImplementation(() => mockDate);
+      const dateSpy = vi.spyOn(global, 'Date').mockImplementation(function MockDate() {
+        return mockDate;
+      });
 
       await metadataService.saveUrlMapping('http://example.com', '/pdfs/example.pdf');
 
@@ -292,7 +300,7 @@ describe('MetadataService', () => {
         },
       });
 
-      Date.mockRestore();
+      dateSpy.mockRestore();
     });
 
     test('应该覆盖已存在的映射', async () => {

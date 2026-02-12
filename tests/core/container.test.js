@@ -1,3 +1,5 @@
+import { describe, it, test, expect, beforeAll, beforeEach, afterAll, afterEach, vi } from 'vitest';
+
 // tests/core/container.test.js
 import Container from '../../src/core/container.js';
 
@@ -100,7 +102,7 @@ describe('Container', () => {
 
   describe('resolveDependencies', () => {
     test('应该解析简单的依赖关系', async () => {
-      container.register('logger', () => ({ log: jest.fn() }));
+      container.register('logger', () => ({ log: vi.fn() }));
       container.register('config', () => ({ apiUrl: 'http://test.com' }));
       container.register('service', (logger, config) => ({ logger, config }), {
         dependencies: ['logger', 'config'],
@@ -112,11 +114,11 @@ describe('Container', () => {
     });
 
     test('应该解析嵌套的依赖关系', async () => {
-      container.register('logger', () => ({ log: jest.fn() }));
-      container.register('db', (logger) => ({ logger, query: jest.fn() }), {
+      container.register('logger', () => ({ log: vi.fn() }));
+      container.register('db', (logger) => ({ logger, query: vi.fn() }), {
         dependencies: ['logger'],
       });
-      container.register('userService', (db) => ({ db, getUser: jest.fn() }), {
+      container.register('userService', (db) => ({ db, getUser: vi.fn() }), {
         dependencies: ['db'],
       });
 
@@ -190,7 +192,7 @@ describe('Container', () => {
 
   describe('dispose', () => {
     test('应该调用服务的dispose方法', async () => {
-      const disposeFn = jest.fn();
+      const disposeFn = vi.fn();
       const service = { dispose: disposeFn };
       container.register('disposableService', () => service);
 
@@ -201,7 +203,7 @@ describe('Container', () => {
     });
 
     test('应该调用服务的close方法', async () => {
-      const closeFn = jest.fn();
+      const closeFn = vi.fn();
       const service = { close: closeFn };
       container.register('closeableService', () => service);
 
@@ -212,7 +214,7 @@ describe('Container', () => {
     });
 
     test('应该调用服务的cleanup方法', async () => {
-      const cleanupFn = jest.fn();
+      const cleanupFn = vi.fn();
       const service = { cleanup: cleanupFn };
       container.register('cleanupService', () => service);
 

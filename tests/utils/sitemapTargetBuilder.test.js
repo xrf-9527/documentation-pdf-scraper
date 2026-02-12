@@ -1,3 +1,5 @@
+import { describe, it, test, expect, beforeAll, beforeEach, afterAll, afterEach, vi } from 'vitest';
+
 import { extractTargetUrlsFromSitemap } from '../../src/utils/sitemapTargetBuilder.js';
 
 describe('sitemapTargetBuilder', () => {

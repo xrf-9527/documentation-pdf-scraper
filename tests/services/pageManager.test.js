@@ -1,4 +1,5 @@
-import { jest } from '@jest/globals';
+import { describe, it, test, expect, beforeAll, beforeEach, afterAll, afterEach, vi } from 'vitest';
+
 import { PageManager } from '../../src/services/pageManager.js';
 import { NetworkError } from '../../src/utils/errors.js';
 
@@ -11,35 +12,35 @@ describe('PageManager', () => {
 
   beforeEach(() => {
     mockPage = {
-      setDefaultTimeout: jest.fn(),
-      setDefaultNavigationTimeout: jest.fn(),
-      setViewport: jest.fn(),
-      setUserAgent: jest.fn(),
-      setRequestInterception: jest.fn(),
-      evaluateOnNewDocument: jest.fn(),
-      close: jest.fn(),
-      isClosed: jest.fn().mockReturnValue(false),
-      on: jest.fn(),
+      setDefaultTimeout: vi.fn(),
+      setDefaultNavigationTimeout: vi.fn(),
+      setViewport: vi.fn(),
+      setUserAgent: vi.fn(),
+      setRequestInterception: vi.fn(),
+      evaluateOnNewDocument: vi.fn(),
+      close: vi.fn(),
+      isClosed: vi.fn().mockReturnValue(false),
+      on: vi.fn(),
     };
 
     mockBrowser = {
-      newPage: jest.fn().mockResolvedValue(mockPage),
+      newPage: vi.fn().mockResolvedValue(mockPage),
     };
 
     mockBrowserPool = {
-      getBrowser: jest.fn().mockResolvedValue(mockBrowser),
-      releaseBrowser: jest.fn(),
-      getStatus: jest.fn().mockReturnValue({
+      getBrowser: vi.fn().mockResolvedValue(mockBrowser),
+      releaseBrowser: vi.fn(),
+      getStatus: vi.fn().mockReturnValue({
         busyBrowsers: 1,
         availableBrowsers: 2,
       }),
     };
 
     mockLogger = {
-      debug: jest.fn(),
-      info: jest.fn(),
-      warn: jest.fn(),
-      error: jest.fn(),
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
     };
 
     pageManager = new PageManager(mockBrowserPool, {
@@ -51,7 +52,7 @@ describe('PageManager', () => {
   });
 
   afterEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   describe('constructor', () => {
@@ -123,7 +124,7 @@ describe('PageManager', () => {
     });
 
     it('should emit page-created event', async () => {
-      const listener = jest.fn();
+      const listener = vi.fn();
       pageManager.on('page-created', listener);
 
       await pageManager.createPage('test-page');
@@ -158,10 +159,10 @@ describe('PageManager', () => {
 
     it('should enable request interception when specified', async () => {
       const mockRequest = {
-        resourceType: jest.fn().mockReturnValue('image'),
-        url: jest.fn().mockReturnValue('https://example.com/image.jpg'),
-        abort: jest.fn(),
-        continue: jest.fn(),
+        resourceType: vi.fn().mockReturnValue('image'),
+        url: vi.fn().mockReturnValue('https://example.com/image.jpg'),
+        abort: vi.fn(),
+        continue: vi.fn(),
       };
 
       await pageManager.configurePage(mockPage, {
@@ -180,10 +181,10 @@ describe('PageManager', () => {
 
     it('should block requests from blocked domains', async () => {
       const mockRequest = {
-        resourceType: jest.fn().mockReturnValue('script'),
-        url: jest.fn().mockReturnValue('https://google-analytics.com/ga.js'),
-        abort: jest.fn(),
-        continue: jest.fn(),
+        resourceType: vi.fn().mockReturnValue('script'),
+        url: vi.fn().mockReturnValue('https://google-analytics.com/ga.js'),
+        abort: vi.fn(),
+        continue: vi.fn(),
       };
 
       await pageManager.configurePage(mockPage, {
@@ -210,7 +211,7 @@ describe('PageManager', () => {
     });
 
     it('should handle page errors', () => {
-      const errorListener = jest.fn();
+      const errorListener = vi.fn();
       pageManager.on('page-error', errorListener);
 
       const errorHandler = mockPage.on.mock.calls.find((call) => call[0] === 'error')[1];
@@ -225,7 +226,7 @@ describe('PageManager', () => {
     });
 
     it('should handle page JavaScript errors', () => {
-      const jsErrorListener = jest.fn();
+      const jsErrorListener = vi.fn();
       pageManager.on('page-js-error', jsErrorListener);
 
       const pageerrorHandler = mockPage.on.mock.calls.find((call) => call[0] === 'pageerror')[1];
@@ -239,7 +240,7 @@ describe('PageManager', () => {
     });
 
     it('should ignore known JavaScript errors', () => {
-      const jsErrorListener = jest.fn();
+      const jsErrorListener = vi.fn();
       pageManager.on('page-js-error', jsErrorListener);
 
       const pageerrorHandler = mockPage.on.mock.calls.find((call) => call[0] === 'pageerror')[1];
@@ -253,7 +254,7 @@ describe('PageManager', () => {
     });
 
     it('should handle page crash', async () => {
-      const crashListener = jest.fn();
+      const crashListener = vi.fn();
       pageManager.on('page-crash', crashListener);
 
       const crashHandler = mockPage.on.mock.calls.find((call) => call[0] === 'crash')[1];
@@ -287,13 +288,13 @@ describe('PageManager', () => {
     });
 
     it('should emit page-response event', () => {
-      const responseListener = jest.fn();
+      const responseListener = vi.fn();
       pageManager.on('page-response', responseListener);
 
       const responseHandler = mockPage.on.mock.calls.find((call) => call[0] === 'response')[1];
       const mockResponse = {
-        url: jest.fn().mockReturnValue('https://example.com'),
-        status: jest.fn().mockReturnValue(200),
+        url: vi.fn().mockReturnValue('https://example.com'),
+        status: vi.fn().mockReturnValue(200),
       };
       responseHandler(mockResponse);
 
@@ -346,7 +347,7 @@ describe('PageManager', () => {
     });
 
     it('should close page successfully', async () => {
-      const closeListener = jest.fn();
+      const closeListener = vi.fn();
       pageManager.on('page-closed', closeListener);
 
       await pageManager.closePage('test-page');
@@ -480,7 +481,7 @@ describe('PageManager', () => {
     it('should close page manager', async () => {
       await pageManager.createPage('page1');
 
-      const closedListener = jest.fn();
+      const closedListener = vi.fn();
       pageManager.on('closed', closedListener);
 
       await pageManager.close();
