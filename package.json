@@ -41,7 +41,7 @@
     "p-limit": "^7.3.0",
     "p-queue": "^9.1.0",
     "pdf-lib": "^1.17.1",
-    "puppeteer": "^24.37.2",
+    "puppeteer": "^24.37.3",
     "puppeteer-extra": "^3.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2",
     "turndown": "^7.1.2",
