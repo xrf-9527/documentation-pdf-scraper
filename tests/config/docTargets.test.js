@@ -22,4 +22,15 @@ describe('doc-target selector compatibility', () => {
       }
     }
   });
+
+  test('openclaw zh-CN target list should not include retired URLs', () => {
+    const filePath = path.resolve(process.cwd(), 'doc-targets', 'openclaw-zh-cn.json');
+    const content = fs.readFileSync(filePath, 'utf8');
+    const config = JSON.parse(content);
+    const targetUrls = Array.isArray(config.targetUrls) ? config.targetUrls : [];
+
+    expect(targetUrls).not.toContain('https://docs.openclaw.ai/zh-CN/help/submitting-a-pr');
+    expect(targetUrls).not.toContain('https://docs.openclaw.ai/zh-CN/help/submitting-an-issue');
+    expect(targetUrls).not.toContain('https://docs.openclaw.ai/zh-CN/hooks/soul-evil');
+  });
 });
