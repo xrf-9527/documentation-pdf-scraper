@@ -2,15 +2,8 @@
 name: 'step-06-complete'
 description: 'Complete the product brief workflow, update status files, and suggest next steps for the project'
 
-# Path Definitions
-workflow_path: '{project-root}/_bmad/bmm/workflows/1-analysis/product-brief'
-
 # File References
-thisStepFile: '{workflow_path}/steps/step-06-complete.md'
-workflowFile: '{workflow_path}/workflow.md'
-outputFile: '{output_folder}/analysis/product-brief-{{project_name}}-{{date}}.md'
-# Task References
-# (No task references used in this completion step)
+outputFile: '{planning_artifacts}/product-brief-{{project_name}}-{{date}}.md'
 ---
 
 # Step 6: Product Brief Completion
@@ -27,6 +20,7 @@ Complete the product brief workflow, update status files, and provide guidance o
 - 📖 CRITICAL: Read the complete step file before taking any action
 - 🔄 CRITICAL: When loading next step with 'C', ensure entire file is read
 - 📋 YOU ARE A FACILITATOR, not a content generator
+- ✅ YOU MUST ALWAYS SPEAK OUTPUT In your Agent communication style with the config `{communication_language}`
 
 ### Role Reinforcement:
 
@@ -79,18 +73,7 @@ I've successfully collaborated with you to create a comprehensive Product Brief 
 
 This brief serves as the foundation for all subsequent product development activities and strategic decisions."
 
-### 2. Workflow Status Update
-
-**Status File Management:**
-Update the main workflow status file:
-
-- Check if `{output_folder}/bmm-workflow-status.yaml` exists
-- If not, create it with basic structure
-- Update workflow_status["product-brief"] = `{outputFile}`
-- Add completion timestamp and metadata
-- Save file, preserving all comments and structure
-
-### 3. Document Quality Check
+### 2. Document Quality Check
 
 **Completeness Validation:**
 Perform final validation of the product brief:
@@ -108,12 +91,12 @@ Perform final validation of the product brief:
 - Are success criteria traceable to user needs and business goals?
 - Does MVP scope align with the problem and solution?
 
-### 4. Suggest Next Steps
+### 3. Suggest Next Steps
 
 **Recommended Next Workflow:**
 Provide guidance on logical next workflows:
 
-1. `workflow prd` - Create detailed Product Requirements Document
+1. `create-prd` - Create detailed Product Requirements Document
    - Brief provides foundation for detailed requirements
    - User personas inform journey mapping
    - Success metrics become specific acceptance criteria
@@ -121,8 +104,8 @@ Provide guidance on logical next workflows:
 
 **Other Potential Next Steps:**
 
-2. `workflow create-ux-design` - UX research and design (can run parallel with PRD)
-3. `workflow domain-research` - Deep market or domain research (if needed)
+1. `create-ux-design` - UX research and design (can run parallel with PRD)
+2. `domain-research` - Deep market or domain research (if needed)
 
 **Strategic Considerations:**
 
@@ -131,12 +114,11 @@ Provide guidance on logical next workflows:
 - Use brief to validate concept before committing to detailed work
 - Brief can guide early technical feasibility discussions
 
-### 5. Present MENU OPTIONS
+### 4. Congrats to the user
 
-**Completion Confirmation:**
-"**Your Product Brief for {{project_name}} is now complete and ready for the next phase!**
+"**Your Product Brief for {{project_name}} is now complete and ready for the next phase!**"
 
-The brief captures everything needed to guide subsequent product development:
+Recap that the brief captures everything needed to guide subsequent product development:
 
 - Clear vision and problem definition
 - Deep understanding of target users
@@ -144,30 +126,9 @@ The brief captures everything needed to guide subsequent product development:
 - Focused MVP scope with realistic boundaries
 - Inspiring long-term vision
 
-**Suggested Next Steps**
+### 5. Suggest next steps
 
-- PRD workflow for detailed requirements?
-- UX design workflow for user experience planning?
-
-**Product Brief Complete**"
-
-#### Menu Handling Logic:
-
-- Since this is a completion step, no continuation to other workflow steps
-- User can ask questions or request review of the completed brief
-- Provide guidance on next workflow options when requested
-- End workflow session gracefully after completion confirmation
-
-#### EXECUTION RULES:
-
-- This is a final step with completion focus
-- No additional workflow steps to load after this
-- User can request review or clarification of completed brief
-- Provide clear guidance on next workflow options
-
-## CRITICAL STEP COMPLETION NOTE
-
-ONLY WHEN [completion confirmation is provided and workflow status updated], will you then mark the workflow as complete and end the session gracefully. No additional steps are loaded after this final completion step.
+Product Brief complete. Read fully and follow: `{project-root}/_bmad/core/tasks/help.md`
 
 ---
 

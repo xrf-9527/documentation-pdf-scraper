@@ -10,6 +10,7 @@
 - 📝 WRITE CONTENT IMMEDIATELY TO DOCUMENT
 - 📖 CRITICAL: ALWAYS read the complete step file before taking any action - partial understanding leads to incomplete research
 - 🔄 CRITICAL: When loading next step with 'C', ensure the entire file is read and understood before proceeding
+- ✅ YOU MUST ALWAYS SPEAK OUTPUT In your Agent communication style with the config `{communication_language}`
 
 ## EXECUTION PROTOCOLS:
 
@@ -178,7 +179,7 @@ _Source: [URL]_
 
 - **CONTENT ALREADY WRITTEN TO DOCUMENT**
 - Update frontmatter: `stepsCompleted: [1, 2]`
-- Load: `./step-03-customer-pain-points.md`
+- Load: `{project-root}/_bmad/bmm/workflows/1-analysis/research/market-steps/step-03-customer-pain-points.md`
 
 ## APPEND TO DOCUMENT:
 
@@ -231,6 +232,6 @@ Content is already written to document when generated in step 4. No additional a
 
 ## NEXT STEP:
 
-After user selects 'C', load `./step-03-customer-pain-points.md` to analyze customer pain points, challenges, and unmet needs for {{research_topic}}.
+After user selects 'C', load `{project-root}/_bmad/bmm/workflows/1-analysis/research/market-steps/step-03-customer-pain-points.md` to analyze customer pain points, challenges, and unmet needs for {{research_topic}}.
 
 Remember: Always write research content to document immediately and emphasize current customer data with rigorous source verification!

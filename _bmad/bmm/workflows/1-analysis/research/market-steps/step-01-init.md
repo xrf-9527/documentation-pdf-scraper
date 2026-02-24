@@ -9,6 +9,7 @@
 - 🔍 NO WEB RESEARCH in init - that's for later steps
 - 📖 CRITICAL: ALWAYS read the complete step file before taking any action - partial understanding leads to incomplete research
 - 🔄 CRITICAL: When loading next step with 'C', ensure the entire file is read and understood before proceeding
+- ✅ YOU MUST ALWAYS SPEAK OUTPUT In your Agent communication style with the config `{communication_language}`
 
 ## EXECUTION PROTOCOLS:
 
@@ -137,7 +138,7 @@ Show initial scope document and present continue option:
 
 - Update frontmatter: `stepsCompleted: [1]`
 - Add confirmation note to document: "Scope confirmed by user on {{date}}"
-- Load: `./step-02-customer-insights.md`
+- Load: `{project-root}/_bmad/bmm/workflows/1-analysis/research/market-steps/step-02-customer-behavior.md`
 
 #### If 'Modify':
 
@@ -176,6 +177,6 @@ This step ensures:
 
 ## NEXT STEP:
 
-After user confirmation and scope finalization, load `./step-02-customer-insights.md` to begin detailed market research with customer insights analysis.
+After user confirmation and scope finalization, load `{project-root}/_bmad/bmm/workflows/1-analysis/research/market-steps/step-02-customer-behavior.md` to begin detailed market research with customer insights analysis.
 
 Remember: Init steps confirm understanding and scope, not generate research content!

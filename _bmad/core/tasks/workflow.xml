@@ -1,4 +1,4 @@
-<task id="_bmad/core/tasks/workflow.xml" name="Execute Workflow">
+<task id="_bmad/core/tasks/workflow.xml" name="Execute Workflow" internal="true">
   <objective>Execute given workflow by loading its configuration, following instructions, and producing output</objective>
 
   <llm critical="true">
@@ -74,14 +74,14 @@
           <action>Display generated content</action>
           <ask> [a] Advanced Elicitation, [c] Continue, [p] Party-Mode, [y] YOLO the rest of this document only. WAIT for response. <if
               response="a">
-              <action>Start the advanced elicitation workflow {project-root}/_bmad/core/tasks/advanced-elicitation.xml</action>
+              <action>Start the advanced elicitation workflow {project-root}/_bmad/core/workflows/advanced-elicitation/workflow.xml</action>
             </if>
             <if
               response="c">
               <action>Continue to next step</action>
             </if>
             <if response="p">
-              <action>Start the party-mode workflow {project-root}/_bmad/core/workflows/party-mode/workflow.yaml</action>
+              <action>Start the party-mode workflow {project-root}/_bmad/core/workflows/party-mode/workflow.md</action>
             </if>
             <if
               response="y">

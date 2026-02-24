@@ -10,13 +10,14 @@
 - 📋 YOU ARE A UX FACILITATOR, not a content generator
 - 💬 FOCUS on defining desired emotional responses and user feelings
 - 🎯 COLLABORATIVE discovery, not assumption-based design
+- ✅ YOU MUST ALWAYS SPEAK OUTPUT In your Agent communication style with the config `{communication_language}`
 
 ## EXECUTION PROTOCOLS:
 
 - 🎯 Show your analysis before taking any action
 - ⚠️ Present A/P/C menu after generating emotional response content
 - 💾 ONLY save when user chooses C (Continue)
-- 📖 Update frontmatter `stepsCompleted: [1, 2, 3, 4]` before loading next step
+- 📖 Update output file frontmatter, adding this step to the end of the list of stepsCompleted.
 - 🚫 FORBIDDEN to load next step until C is selected
 
 ## COLLABORATION MENUS (A/P/C):
@@ -29,8 +30,8 @@ This step will generate content and present choices:
 
 ## PROTOCOL INTEGRATION:
 
-- When 'A' selected: Execute {project-root}/\_bmad/core/tasks/advanced-elicitation.xml
-- When 'P' selected: Execute {project-root}/\_bmad/core/workflows/party-mode/workflow.md
+- When 'A' selected: Read fully and follow: {project-root}/_bmad/core/workflows/advanced-elicitation/workflow.xml
+- When 'P' selected: Read fully and follow: {project-root}/_bmad/core/workflows/party-mode/workflow.md
 - PROTOCOLS always return to this step's A/P/C menu
 - User accepts/rejects protocol changes before proceeding
 
@@ -163,7 +164,7 @@ Show the generated emotional response content and present choices:
 
 #### If 'A' (Advanced Elicitation):
 
-- Execute {project-root}/\_bmad/core/tasks/advanced-elicitation.xml with the current emotional response content
+- Read fully and follow: {project-root}/_bmad/core/workflows/advanced-elicitation/workflow.xml with the current emotional response content
 - Process the enhanced emotional insights that come back
 - Ask user: "Accept these improvements to the emotional response definition? (y/n)"
 - If yes: Update content with improvements, then return to A/P/C menu
@@ -171,7 +172,7 @@ Show the generated emotional response content and present choices:
 
 #### If 'P' (Party Mode):
 
-- Execute {project-root}/\_bmad/core/workflows/party-mode/workflow.md with the current emotional response definition
+- Read fully and follow: {project-root}/_bmad/core/workflows/party-mode/workflow.md with the current emotional response definition
 - Process the collaborative emotional insights that come back
 - Ask user: "Accept these changes to the emotional response definition? (y/n)"
 - If yes: Update content with improvements, then return to A/P/C menu
@@ -179,9 +180,9 @@ Show the generated emotional response content and present choices:
 
 #### If 'C' (Continue):
 
-- Append the final content to `{output_folder}/ux-design-specification.md`
-- Update frontmatter: `stepsCompleted: [1, 2, 3, 4]`
-- Load `./step-05-inspiration.md`
+- Append the final content to `{planning_artifacts}/ux-design-specification.md`
+- Update frontmatter: append step to end of stepsCompleted array
+- Load `{project-root}/_bmad/bmm/workflows/2-plan-workflows/create-ux-design/steps/step-05-inspiration.md`
 
 ## APPEND TO DOCUMENT:
 
@@ -213,6 +214,6 @@ When user selects 'C', append the content directly to the document using the str
 
 ## NEXT STEP:
 
-After user selects 'C' and content is saved to document, load `./step-05-inspiration.md` to analyze UX patterns from inspiring products.
+After user selects 'C' and content is saved to document, load `{project-root}/_bmad/bmm/workflows/2-plan-workflows/create-ux-design/steps/step-05-inspiration.md` to analyze UX patterns from inspiring products.
 
 Remember: Do NOT proceed to step-05 until user explicitly selects 'C' from the A/P/C menu and content is saved!

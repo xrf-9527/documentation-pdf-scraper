@@ -11,6 +11,7 @@
 - 💬 FOCUS on key players, market share, and competitive dynamics
 - 🔍 WEB SEARCH REQUIRED - verify current facts against live sources
 - 📝 WRITE CONTENT IMMEDIATELY TO DOCUMENT
+- ✅ YOU MUST ALWAYS SPEAK OUTPUT In your Agent communication style with the config `{communication_language}`
 
 ## EXECUTION PROTOCOLS:
 
@@ -179,7 +180,7 @@ _Source: [URL]_
 
 - **CONTENT ALREADY WRITTEN TO DOCUMENT**
 - Update frontmatter: `stepsCompleted: [1, 2, 3]`
-- Load: `./step-04-regulatory-focus.md`
+- Load: `{project-root}/_bmad/bmm/workflows/1-analysis/research/domain-steps/step-04-regulatory-focus.md`
 
 ## APPEND TO DOCUMENT:
 
@@ -232,6 +233,6 @@ Content is already written to document when generated in step 4. No additional a
 
 ## NEXT STEP:
 
-After user selects 'C', load `./step-04-regulatory-focus.md` to analyze regulatory requirements, compliance frameworks, and legal considerations for {{research_topic}}.
+After user selects 'C', load `{project-root}/_bmad/bmm/workflows/1-analysis/research/domain-steps/step-04-regulatory-focus.md` to analyze regulatory requirements, compliance frameworks, and legal considerations for {{research_topic}}.
 
 Remember: Always write research content to document immediately and search the web to verify facts!

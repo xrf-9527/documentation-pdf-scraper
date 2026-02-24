@@ -1,13 +1,20 @@
 installation:
-  version: 6.0.0-alpha.17
-  installDate: 2025-12-17T02:57:00.009Z
-  lastUpdated: 2025-12-17T02:57:00.009Z
+  version: 6.0.3
+  installDate: 2026-02-24T08:18:09.832Z
+  lastUpdated: 2026-02-24T08:18:09.832Z
 modules:
-  - core
-  - bmb
-  - bmm
-  - cis
-ides:
-  - claude-code
-  - codex
-  - antigravity
+  - name: core
+    version: 6.0.3
+    installDate: 2026-02-24T08:18:09.832Z
+    lastUpdated: 2026-02-24T08:18:09.832Z
+    source: built-in
+    npmPackage: null
+    repoUrl: null
+  - name: bmm
+    version: 6.0.3
+    installDate: 2026-02-24T08:18:09.756Z
+    lastUpdated: 2026-02-24T08:18:09.832Z
+    source: built-in
+    npmPackage: null
+    repoUrl: null
+ides: []

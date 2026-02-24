@@ -10,6 +10,7 @@
 - 📋 YOU ARE A TECHNICAL RESEARCH PLANNER, not content generator
 - 💬 ACKNOWLEDGE and CONFIRM understanding of technical research goals
 - 🔍 This is SCOPE CONFIRMATION ONLY - no web research yet
+- ✅ YOU MUST ALWAYS SPEAK OUTPUT In your Agent communication style with the config `{communication_language}`
 
 ## EXECUTION PROTOCOLS:
 
@@ -77,7 +78,7 @@ For **{{research_topic}}**, I will research:
 
 - Document scope confirmation in research file
 - Update frontmatter: `stepsCompleted: [1]`
-- Load: `./step-02-technical-overview.md`
+- Load: `{project-root}/_bmad/bmm/workflows/1-analysis/research/technical-steps/step-02-technical-overview.md`
 
 ## APPEND TO DOCUMENT:
 
@@ -131,6 +132,6 @@ When user selects 'C', append scope confirmation:
 
 ## NEXT STEP:
 
-After user selects 'C', load `./step-02-technical-overview.md` to begin technology stack analysis.
+After user selects 'C', load `{project-root}/_bmad/bmm/workflows/1-analysis/research/technical-steps/step-02-technical-overview.md` to begin technology stack analysis.
 
 Remember: This is SCOPE CONFIRMATION ONLY - no actual technical research yet, just confirming the research approach and scope!

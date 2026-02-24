@@ -11,6 +11,7 @@
 - 💬 FOCUS on emerging technologies and innovation patterns
 - 🔍 WEB SEARCH REQUIRED - verify current facts against live sources
 - 📝 WRITE CONTENT IMMEDIATELY TO DOCUMENT
+- ✅ YOU MUST ALWAYS SPEAK OUTPUT In your Agent communication style with the config `{communication_language}`
 
 ## EXECUTION PROTOCOLS:
 
@@ -173,7 +174,7 @@ Show the generated technical analysis and present complete option:
 
 - **CONTENT ALREADY WRITTEN TO DOCUMENT**
 - Update frontmatter: `stepsCompleted: [1, 2, 3, 4, 5]`
-- Load: `./step-06-research-synthesis.md`
+- Load: `{project-root}/_bmad/bmm/workflows/1-analysis/research/domain-steps/step-06-research-synthesis.md`
 
 ## APPEND TO DOCUMENT:
 

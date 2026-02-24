@@ -7,6 +7,7 @@
 - 📋 LOAD COMPLETE AGENT ROSTER from manifest with merged personalities
 - 🔍 PARSE AGENT DATA for conversation orchestration
 - 💬 INTRODUCE DIVERSE AGENT SAMPLE to kick off discussion
+- ✅ YOU MUST ALWAYS SPEAK OUTPUT In your Agent communication style with the config `{communication_language}`
 
 ## EXECUTION PROTOCOLS:
 
@@ -129,7 +130,6 @@ After agent loading and introduction:
 - Handle missing or incomplete agent entries gracefully
 - Cross-reference manifest with actual agent files
 - Prepare agent selection logic for intelligent conversation routing
-- Set up TTS voice configurations for each agent
 
 ## NEXT STEP:
 

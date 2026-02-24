@@ -11,6 +11,7 @@
 - 💬 FOCUS on customer decision processes and journey mapping
 - 🔍 WEB SEARCH REQUIRED - verify current facts against live sources
 - 📝 WRITE CONTENT IMMEDIATELY TO DOCUMENT
+- ✅ YOU MUST ALWAYS SPEAK OUTPUT In your Agent communication style with the config `{communication_language}`
 
 ## EXECUTION PROTOCOLS:
 
@@ -199,7 +200,7 @@ _Source: [URL]_
 
 - **CONTENT ALREADY WRITTEN TO DOCUMENT**
 - Update frontmatter: `stepsCompleted: [1, 2, 3, 4]`
-- Load: `./step-05-competitive-analysis.md`
+- Load: `{project-root}/_bmad/bmm/workflows/1-analysis/research/market-steps/step-05-competitive-analysis.md`
 
 ## APPEND TO DOCUMENT:
 
@@ -253,6 +254,6 @@ Content is already written to document when generated in step 4. No additional a
 
 ## NEXT STEP:
 
-After user selects 'C', load `./step-05-competitive-analysis.md` to analyze competitive landscape, market positioning, and competitive strategies for {{research_topic}}.
+After user selects 'C', load `{project-root}/_bmad/bmm/workflows/1-analysis/research/market-steps/step-05-competitive-analysis.md` to analyze competitive landscape, market positioning, and competitive strategies for {{research_topic}}.
 
 Remember: Always write research content to document immediately and emphasize current customer decision data with rigorous source verification!

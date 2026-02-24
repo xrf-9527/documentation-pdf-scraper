@@ -11,6 +11,7 @@
 - 💬 FOCUS on patterns that prevent AI agent implementation conflicts
 - 🎯 EMPHASIZE what agents could decide DIFFERENTLY if not specified
 - ⚠️ ABSOLUTELY NO TIME ESTIMATES - AI development speed has fundamentally changed
+- ✅ YOU MUST ALWAYS SPEAK OUTPUT In your Agent communication style with the config `{communication_language}`
 
 ## EXECUTION PROTOCOLS:
 
@@ -31,8 +32,8 @@ This step will generate content and present choices:
 
 ## PROTOCOL INTEGRATION:
 
-- When 'A' selected: Execute {project-root}/\_bmad/core/tasks/advanced-elicitation.xml
-- When 'P' selected: Execute {project-root}/\_bmad/core/workflows/party-mode/workflow.md
+- When 'A' selected: Read fully and follow: {project-root}/_bmad/core/workflows/advanced-elicitation/workflow.xml
+- When 'P' selected: Read fully and follow: {project-root}/_bmad/core/workflows/party-mode/workflow.md
 - PROTOCOLS always return to display this step's A/P/C menu after the A or P have completed
 - User accepts/rejects protocol changes before proceeding
 
@@ -304,7 +305,7 @@ Show the generated patterns content and present choices:
 
 #### If 'A' (Advanced Elicitation):
 
-- Execute {project-root}/\_bmad/core/tasks/advanced-elicitation.xml with current patterns
+- Read fully and follow: {project-root}/_bmad/core/workflows/advanced-elicitation/workflow.xml with current patterns
 - Process enhanced consistency rules that come back
 - Ask user: "Accept these additional pattern refinements? (y/n)"
 - If yes: Update content, then return to A/P/C menu
@@ -312,7 +313,7 @@ Show the generated patterns content and present choices:
 
 #### If 'P' (Party Mode):
 
-- Execute {project-root}/\_bmad/core/workflows/party-mode/workflow.md with implementation patterns context
+- Read fully and follow: {project-root}/_bmad/core/workflows/party-mode/workflow.md with implementation patterns context
 - Process collaborative insights about potential conflicts
 - Ask user: "Accept these changes to the implementation patterns? (y/n)"
 - If yes: Update content, then return to A/P/C menu
@@ -320,9 +321,9 @@ Show the generated patterns content and present choices:
 
 #### If 'C' (Continue):
 
-- Append the final content to `{output_folder}/architecture.md`
+- Append the final content to `{planning_artifacts}/architecture.md`
 - Update frontmatter: `stepsCompleted: [1, 2, 3, 4, 5]`
-- Load `./step-06-structure.md`
+- Load `{project-root}/_bmad/bmm/workflows/3-solutioning/create-architecture/steps/step-06-structure.md`
 
 ## APPEND TO DOCUMENT:
 
@@ -353,6 +354,6 @@ When user selects 'C', append the content directly to the document using the str
 
 ## NEXT STEP:
 
-After user selects 'C' and content is saved to document, load `./step-06-structure.md` to define the complete project structure.
+After user selects 'C' and content is saved to document, load `{project-root}/_bmad/bmm/workflows/3-solutioning/create-architecture/steps/step-06-structure.md` to define the complete project structure.
 
 Remember: Do NOT proceed to step-06 until user explicitly selects 'C' from the A/P/C menu and content is saved!
