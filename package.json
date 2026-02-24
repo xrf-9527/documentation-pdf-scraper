@@ -41,7 +41,7 @@
     "p-limit": "^7.3.0",
     "p-queue": "^9.1.0",
     "pdf-lib": "^1.17.1",
-    "puppeteer": "^24.37.3",
+    "puppeteer": "^24.37.5",
     "puppeteer-extra": "^3.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2",
     "turndown": "^7.1.2",
@@ -51,7 +51,7 @@
     "@eslint/js": "^9.28.0",
     "@eslint/json": "^1.0.1",
     "@vitest/coverage-v8": "^4.0.18",
-    "eslint": "^10.0.0",
+    "eslint": "^10.0.1",
     "globals": "^17.3.0",
     "prettier": "^3.8.1",
     "vitest": "^4.0.18"
