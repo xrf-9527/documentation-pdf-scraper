@@ -30,6 +30,7 @@
   },
   "enablePDFStyleProcessing": true,
   "navigationStrategy": "load",
+  "urlCollectionWaitUntil": "load",
   "targetUrls": [],
   "translation": {
     "enabled": false,
