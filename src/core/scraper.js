@@ -661,7 +661,10 @@ export class Scraper extends EventEmitter {
       await retry(
         async () => {
           const gotoStartTime = Date.now();
-          const waitUntil = this.config?.navigationWaitUntil || 'domcontentloaded';
+          const waitUntil =
+            this.config?.urlCollectionWaitUntil ||
+            this.config?.navigationWaitUntil ||
+            'domcontentloaded';
           const timeout = this.config?.pageTimeout || 30000;
 
           const response = await page.goto(currentUrl, {

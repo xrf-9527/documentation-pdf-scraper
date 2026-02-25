@@ -129,6 +129,13 @@ const configSchema = Joi.object({
       'Preferred navigation wait strategy - "auto" uses default fallback order (domcontentloaded→networkidle2→networkidle0→load), specific strategy (e.g., "load") tries that first for better performance on SPAs'
     ),
 
+  urlCollectionWaitUntil: Joi.string()
+    .valid('domcontentloaded', 'networkidle2', 'networkidle0', 'load')
+    .default('domcontentloaded')
+    .description(
+      'Navigation waitUntil strategy used specifically during URL collection (entry page crawling)'
+    ),
+
   // 浏览器配置
   browser: Joi.object({
     headless: Joi.boolean().default(true).description('Run browser in headless mode'),

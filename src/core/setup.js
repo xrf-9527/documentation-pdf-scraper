@@ -141,9 +141,11 @@ async function setupContainer() {
     container.register(
       'queueManager',
       (config, logger) => {
+        const queueTimeout = config.queue?.timeout || config.pageTimeout || 30000;
         return new QueueManager({
           concurrency: config.concurrency || 5,
-          timeout: 0, // Disable queue timeout - individual operations have their own timeouts
+          // p-queue requires a positive finite timeout.
+          timeout: queueTimeout,
           logger,
         });
       },

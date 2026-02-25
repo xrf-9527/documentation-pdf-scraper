@@ -68,6 +68,35 @@ describe('ConfigValidator', () => {
       expect(result.config.navExcludeSelector).toBe('');
     });
 
+    test('应该验证 urlCollectionWaitUntil 配置', () => {
+      const config = {
+        rootURL: 'https://example.com',
+        pdfDir: './pdfs',
+        navLinksSelector: 'nav a',
+        contentSelector: 'main',
+        urlCollectionWaitUntil: 'load',
+      };
+
+      const result = validateConfig(config);
+
+      expect(result.valid).toBe(true);
+      expect(result.config.urlCollectionWaitUntil).toBe('load');
+    });
+
+    test('urlCollectionWaitUntil 应该应用默认值', () => {
+      const config = {
+        rootURL: 'https://example.com',
+        pdfDir: './pdfs',
+        navLinksSelector: 'nav a',
+        contentSelector: 'main',
+      };
+
+      const result = validateConfig(config);
+
+      expect(result.valid).toBe(true);
+      expect(result.config.urlCollectionWaitUntil).toBe('domcontentloaded');
+    });
+
     test('应该为缺少的必需字段返回错误', () => {
       const config = {
         pdfDir: './pdfs',

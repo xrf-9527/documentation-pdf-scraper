@@ -250,6 +250,24 @@ describe('Scraper', () => {
       mockPage.waitForSelector.mockResolvedValue();
     });
 
+    it('should use urlCollectionWaitUntil for entry page navigation', async () => {
+      scraper.config.urlCollectionWaitUntil = 'load';
+      mockPage.evaluate.mockResolvedValue([]);
+
+      const urls = await scraper._collectUrlsFromEntryPoint(mockPage, 'https://example.com/section1', [
+        'https://example.com/section1',
+      ]);
+
+      expect(urls).toEqual(['https://example.com/section1']);
+      expect(mockPage.goto).toHaveBeenCalledWith(
+        'https://example.com/section1',
+        expect.objectContaining({
+          waitUntil: 'load',
+          timeout: 30000,
+        })
+      );
+    });
+
     it('should filter other entry points (ignore hash/query) and non-http(s) URLs', async () => {
       scraper.config.navExcludeSelector = '.nav-tabs';
 
