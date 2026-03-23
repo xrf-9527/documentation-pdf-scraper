@@ -905,10 +905,11 @@ export class Scraper extends EventEmitter {
         }
       }
 
-      // 检查baseUrl前缀过滤
+      // 检查baseUrl前缀过滤（去掉尾部斜杠以匹配normalizeUrl的行为）
       if (this.config.baseUrl) {
-        if (!url.startsWith(this.config.baseUrl)) {
-          this.logger.debug('URL被baseUrl过滤', { url, baseUrl: this.config.baseUrl });
+        const normalizedBase = this.config.baseUrl.replace(/\/+$/, '');
+        if (!url.startsWith(normalizedBase)) {
+          this.logger.debug('URL被baseUrl过滤', { url, baseUrl: normalizedBase });
           return false;
         }
       }

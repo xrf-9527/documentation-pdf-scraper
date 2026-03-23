@@ -228,6 +228,9 @@ export class PandocPdfService {
       });
     });
 
+    // 4. 将图片 URL 中的 fm=webp 替换为 fm=png（LaTeX 不支持 webp 格式）
+    cleaned = cleaned.replace(/fm=webp/g, 'fm=png');
+
     return cleaned;
   }
 
