@@ -1621,7 +1621,10 @@ export class Scraper extends EventEmitter {
             url: url,
             priority: 0,
           }
-        );
+        ).catch((error) => {
+          // 防御性兜底：p-queue v9 timeout rejection 已由 queueManager 内部处理
+          this.logger.debug('队列任务异常（已由 queueManager 处理）', { url, error: error?.message });
+        });
       });
 
       // 等待所有任务完成

@@ -56,7 +56,6 @@ describe('QueueManager', () => {
       interval: 1000,
       intervalCap: 5,
       timeout: 30000,
-      throwOnTimeout: false,
     });
   });
 
@@ -67,7 +66,7 @@ describe('QueueManager', () => {
       expect(defaultQM.options.interval).toBe(1000);
       expect(defaultQM.options.intervalCap).toBe(5);
       expect(defaultQM.options.timeout).toBe(30000);
-      expect(defaultQM.options.throwOnTimeout).toBe(false);
+      // p-queue v9 removed throwOnTimeout — timeout always throws TimeoutError
     });
 
     test('应该使用提供的选项初始化', () => {
