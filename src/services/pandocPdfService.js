@@ -209,9 +209,10 @@ export class PandocPdfService {
     cleaned = cleaned.replace(/<Note>/g, '\n> **Note:** ');
     cleaned = cleaned.replace(/<\/Note>/g, '\n');
 
-    // Remove any remaining self-closing or unknown MDX components
-    // e.g. <Frame>, <Card>, <CardGroup>, <CodeGroup>, <ResponseField>, etc.
-    cleaned = cleaned.replace(/<\/?(?:Frame|Card|CardGroup|CodeGroup|ResponseField|ParamField|Expandable|Snippet)[^>]*>/g, '');
+    // Remove any remaining JSX/MDX component tags (PascalCase = JSX convention)
+    // Strips only the tags, inner content is preserved
+    // e.g. <Frame><img .../></Frame> -> <img .../>
+    cleaned = cleaned.replace(/<\/?[A-Z][A-Za-z]*(?:\s[^>]*)?\/?>/g, '');
 
     // 0.1 修复缩进
     // 移除 2-4 个空格的缩进 (修复 <Step> 内容被识别为代码块的问题)
