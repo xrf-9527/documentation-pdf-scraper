@@ -11,7 +11,7 @@ export class QueueManager extends EventEmitter {
       interval: options.interval || 1000,
       intervalCap: options.intervalCap || 5,
       timeout: options.timeout || 30000,
-      throwOnTimeout: options.throwOnTimeout || false,
+      // p-queue v9 removed throwOnTimeout — timeout always throws TimeoutError
       maxTaskHistory:
         Number.isInteger(options.maxTaskHistory) && options.maxTaskHistory >= 0
           ? options.maxTaskHistory
@@ -24,7 +24,6 @@ export class QueueManager extends EventEmitter {
       interval: this.options.interval,
       intervalCap: this.options.intervalCap,
       timeout: this.options.timeout,
-      throwOnTimeout: this.options.throwOnTimeout,
     });
 
     this.tasks = new Map();
@@ -101,7 +100,27 @@ export class QueueManager extends EventEmitter {
       }
     };
 
-    return this.queue.add(wrappedFn, { priority: task.priority });
+    // p-queue v9: timeout always throws TimeoutError (throwOnTimeout was removed).
+    // When pTimeout wins the race, wrappedFn's try/catch/finally hasn't run yet,
+    // so we must handle state cleanup here before re-throwing.
+    const promise = this.queue.add(wrappedFn, { priority: task.priority });
+
+    return promise.catch((error) => {
+      // Only update state if wrappedFn's internal catch hasn't already processed this task
+      if (task.status !== 'failed' && task.status !== 'completed') {
+        task.status = 'failed';
+        task.error = error;
+        task.failedAt = Date.now();
+        this.emit('taskFailed', { id, error, task });
+      }
+      // Ensure cleanup even if wrappedFn's finally block hasn't run yet
+      if (this.tasks.has(id)) {
+        this.tasks.delete(id);
+        this.recordTaskHistory(task);
+      }
+      // Re-throw to preserve API contract — callers must handle rejections
+      throw error;
+    });
   }
 
   /**
