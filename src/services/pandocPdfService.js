@@ -193,21 +193,29 @@ export class PandocPdfService {
     // </Accordion> -> remove
     cleaned = cleaned.replace(/<\/Accordion>/g, '\n');
 
-    // <Info> / </Info> -> blockquote marker (ℹ️)
-    cleaned = cleaned.replace(/<Info>/g, '\n> **Note:** ');
-    cleaned = cleaned.replace(/<\/Info>/g, '\n');
-
-    // <Tip> / </Tip> -> blockquote marker (💡)
-    cleaned = cleaned.replace(/<Tip>/g, '\n> **Tip:** ');
-    cleaned = cleaned.replace(/<\/Tip>/g, '\n');
-
-    // <Warning> / </Warning> -> blockquote marker (⚠️)
-    cleaned = cleaned.replace(/<Warning>/g, '\n> **Warning:** ');
-    cleaned = cleaned.replace(/<\/Warning>/g, '\n');
-
-    // <Note> / </Note> -> blockquote marker
-    cleaned = cleaned.replace(/<Note>/g, '\n> **Note:** ');
-    cleaned = cleaned.replace(/<\/Note>/g, '\n');
+    // <Info|Tip|Warning|Note> -> blockquote with marker
+    // Convert the entire block content so every inner line gets the `> ` prefix.
+    // This prevents orphaned list items outside the blockquote that break LaTeX.
+    cleaned = cleaned.replace(
+      /<(Info|Tip|Warning|Note)>([\s\S]*?)<\/\1>/g,
+      (_match, tag, innerContent) => {
+        const label = tag === 'Tip' ? 'Tip' : tag === 'Warning' ? 'Warning' : 'Note';
+        const lines = innerContent.split('\n');
+        const quotedLines = [];
+        let firstContent = true;
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) continue; // skip blank lines inside the component
+          if (firstContent) {
+            quotedLines.push(`> **${label}:** ${trimmed}`);
+            firstContent = false;
+          } else {
+            quotedLines.push(`> ${trimmed}`);
+          }
+        }
+        return '\n' + quotedLines.join('\n') + '\n';
+      }
+    );
 
     // Remove any remaining JSX/MDX component tags (PascalCase = JSX convention)
     // Strips only the tags, inner content is preserved
@@ -268,7 +276,16 @@ export class PandocPdfService {
       });
     });
 
-    // 4. 将图片 URL 中的 fm=webp 替换为 fm=png（LaTeX 不支持 webp 格式）
+    // 4. 修复 blockquote 中的列表项（防止 LaTeX \end{quote} / missing \item 错误）
+    // 4a. Remove empty list items inside blockquotes: "> -" or "> *" with no content
+    cleaned = cleaned.replace(/^(>\s*)-\s*$/gm, '$1');
+    cleaned = cleaned.replace(/^(>\s*)\*\s*$/gm, '$1');
+
+    // 4b. Ensure a blank line between blockquote prose and blockquote list items
+    // e.g. "> text\n> - item" -> "> text\n>\n> - item"
+    cleaned = cleaned.replace(/^(>.*[^\s-*].*)\n(>\s*[-*]\s+\S)/gm, '$1\n>\n$2');
+
+    // 5. 将图片 URL 中的 fm=webp 替换为 fm=png（LaTeX 不支持 webp 格式）
     cleaned = cleaned.replace(/fm=webp/g, 'fm=png');
 
     return cleaned;
