@@ -164,7 +164,8 @@ export class PandocPdfService {
     // 支持任意数量的反引号 (>=3)
     let cleaned = content.replace(/^(`{3,})(\w+)\s+theme=\{[^}]+\}/gm, '$1$2');
 
-    // 0. 处理 <Step> 组件
+    // 0. 处理 MDX/JSX 自定义组件
+
     // <Steps> / </Steps> -> remove
     cleaned = cleaned.replace(/<\/?Steps>/g, '');
 
@@ -173,6 +174,44 @@ export class PandocPdfService {
 
     // </Step> -> remove
     cleaned = cleaned.replace(/<\/Step>/g, '\n');
+
+    // <Tabs> / </Tabs> -> remove (keep content of all tabs)
+    cleaned = cleaned.replace(/<\/?Tabs>/g, '');
+
+    // <Tab title="..."> -> #### ... (use H4 for tab titles)
+    cleaned = cleaned.replace(/<Tab[^>]*title="([^"]+)"[^>]*>/g, '\n#### $1\n');
+
+    // </Tab> -> remove
+    cleaned = cleaned.replace(/<\/Tab>/g, '\n');
+
+    // <AccordionGroup> / </AccordionGroup> -> remove
+    cleaned = cleaned.replace(/<\/?AccordionGroup>/g, '');
+
+    // <Accordion title="..." ...> -> #### ...
+    cleaned = cleaned.replace(/<Accordion[^>]*title="([^"]+)"[^>]*>/g, '\n#### $1\n');
+
+    // </Accordion> -> remove
+    cleaned = cleaned.replace(/<\/Accordion>/g, '\n');
+
+    // <Info> / </Info> -> blockquote marker (ℹ️)
+    cleaned = cleaned.replace(/<Info>/g, '\n> **Note:** ');
+    cleaned = cleaned.replace(/<\/Info>/g, '\n');
+
+    // <Tip> / </Tip> -> blockquote marker (💡)
+    cleaned = cleaned.replace(/<Tip>/g, '\n> **Tip:** ');
+    cleaned = cleaned.replace(/<\/Tip>/g, '\n');
+
+    // <Warning> / </Warning> -> blockquote marker (⚠️)
+    cleaned = cleaned.replace(/<Warning>/g, '\n> **Warning:** ');
+    cleaned = cleaned.replace(/<\/Warning>/g, '\n');
+
+    // <Note> / </Note> -> blockquote marker
+    cleaned = cleaned.replace(/<Note>/g, '\n> **Note:** ');
+    cleaned = cleaned.replace(/<\/Note>/g, '\n');
+
+    // Remove any remaining self-closing or unknown MDX components
+    // e.g. <Frame>, <Card>, <CardGroup>, <CodeGroup>, <ResponseField>, etc.
+    cleaned = cleaned.replace(/<\/?(?:Frame|Card|CardGroup|CodeGroup|ResponseField|ParamField|Expandable|Snippet)[^>]*>/g, '');
 
     // 0.1 修复缩进
     // 移除 2-4 个空格的缩进 (修复 <Step> 内容被识别为代码块的问题)
