@@ -62,14 +62,16 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
+          sudo apt-get install -y \
             pandoc \
             texlive-xetex \
             texlive-fonts-recommended \
             texlive-fonts-extra \
             texlive-latex-extra \
             texlive-lang-chinese \
-            fonts-noto-cjk
+            fonts-noto-cjk \
+            fonts-lmodern \
+            lmodern
 
       - name: Install project dependencies
         run: |
