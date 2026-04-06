@@ -1,0 +1,196 @@
+name: Generate PDF
+
+on:
+  workflow_dispatch:
+    inputs:
+      doc_target:
+        description: '文档目标'
+        required: true
+        type: choice
+        options:
+          - claude-code
+          - openai
+          - openclaw
+          - anthropic-research
+          - cloudflare-blog
+          - 53ai
+          - claude-blog
+      delivery_method:
+        description: '分发方式'
+        required: true
+        type: choice
+        default: 'release'
+        options:
+          - release
+          - kindle_email
+          - both
+
+concurrency:
+  group: generate-pdf-${{ github.event.inputs.doc_target }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  generate:
+    name: Generate PDF (${{ inputs.doc_target }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    outputs:
+      pdf_filename: ${{ steps.find-pdf.outputs.filename }}
+      pdf_path: ${{ steps.find-pdf.outputs.path }}
+      tag_name: ${{ steps.tag.outputs.tag }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          python-version: '3.10'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pandoc \
+            texlive-xetex \
+            texlive-fonts-recommended \
+            texlive-fonts-extra \
+            texlive-latex-extra \
+            texlive-lang-chinese \
+            fonts-noto-cjk
+
+      - name: Install project dependencies
+        run: |
+          npm ci
+          uv sync --locked
+
+      - name: Switch doc target
+        run: node scripts/use-doc-target.js use ${{ inputs.doc_target }}
+
+      - name: Generate PDF
+        run: make run
+
+      - name: Find generated PDF
+        id: find-pdf
+        run: |
+          PDF_DIR="pdfs/finalPdf"
+          echo "Searching in: $PDF_DIR"
+          ls -la "$PDF_DIR"/ 2>/dev/null || true
+
+          PDF_FILE=$(find "$PDF_DIR" -name '*.pdf' -type f | sort | tail -1)
+          if [ -z "$PDF_FILE" ]; then
+            echo "::error::No PDF file found in $PDF_DIR"
+            exit 1
+          fi
+
+          FILENAME=$(basename "$PDF_FILE")
+          echo "filename=$FILENAME" >> "$GITHUB_OUTPUT"
+          echo "path=$PDF_FILE" >> "$GITHUB_OUTPUT"
+          echo "Found PDF: $PDF_FILE"
+
+      - name: Generate tag name
+        id: tag
+        run: |
+          DATE=$(date +%Y%m%d)
+          TAG="pdf-${{ inputs.doc_target }}-${DATE}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Upload PDF artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pdf-${{ inputs.doc_target }}
+          path: ${{ steps.find-pdf.outputs.path }}
+          retention-days: 30
+          compression-level: 0
+
+  release:
+    name: Create GitHub Release
+    needs: generate
+    if: inputs.delivery_method == 'release' || inputs.delivery_method == 'both'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Download PDF artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pdf-${{ inputs.doc_target }}
+          path: ./release-assets
+
+      - name: Create Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ needs.generate.outputs.tag_name }}"
+
+          # 删除同名 tag/release（如果当天重复运行）
+          gh release delete "$TAG" --yes 2>/dev/null || true
+          git tag -d "$TAG" 2>/dev/null || true
+          git push origin ":refs/tags/$TAG" 2>/dev/null || true
+
+          # 创建 release 并上传 PDF
+          gh release create "$TAG" \
+            --title "PDF: ${{ inputs.doc_target }} ($(date +%Y-%m-%d))" \
+            --notes "Auto-generated PDF for **${{ inputs.doc_target }}** documentation.
+
+          - Generated: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+          - Triggered by: @${{ github.actor }}" \
+            ./release-assets/*.pdf
+
+  kindle:
+    name: Send to Kindle
+    needs: generate
+    if: inputs.delivery_method == 'kindle_email' || inputs.delivery_method == 'both'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Download PDF artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pdf-${{ inputs.doc_target }}
+          path: ./kindle-pdf
+
+      - name: Check PDF size (Kindle 50MB limit)
+        run: |
+          PDF_FILE=$(find ./kindle-pdf -name '*.pdf' -type f | head -1)
+          if [ -z "$PDF_FILE" ]; then
+            echo "::error::No PDF file found"
+            exit 1
+          fi
+          SIZE=$(stat -c%s "$PDF_FILE")
+          SIZE_MB=$((SIZE / 1024 / 1024))
+          echo "PDF size: ${SIZE_MB}MB"
+          if [ "$SIZE" -gt 52428800 ]; then
+            echo "::error::PDF exceeds Kindle 50MB limit (${SIZE_MB}MB)"
+            exit 1
+          fi
+
+      - name: Send to Kindle via Gmail
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          secure: true
+          username: ${{ secrets.SMTP_USERNAME }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+          subject: ${{ inputs.doc_target }} documentation
+          to: zjlgdx_us@kindle.com
+          from: ${{ secrets.SMTP_USERNAME }}
+          body: "Auto-generated PDF for ${{ inputs.doc_target }} documentation."
+          attachments: ./kindle-pdf/*.pdf
