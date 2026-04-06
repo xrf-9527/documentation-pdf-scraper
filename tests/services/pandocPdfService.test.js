@@ -244,6 +244,41 @@ describe('PandocPdfService', () => {
       expect(result).toBe(expected);
     });
 
+    it('should convert Info component with list items to fully-quoted blockquote', () => {
+      const input = '<Info>\n- Step 1\n- Step 2\n</Info>';
+      const result = service._cleanMarkdownContent(input);
+      expect(result).toContain('> **Note:** - Step 1');
+      expect(result).toContain('> - Step 2');
+      // No unquoted list items
+      expect(result).not.toMatch(/^- Step/m);
+    });
+
+    it('should convert Tip component with multiline content to blockquote', () => {
+      const input = '<Tip>\nDo this first.\n- Option A\n- Option B\n</Tip>';
+      const result = service._cleanMarkdownContent(input);
+      expect(result).toContain('> **Tip:** Do this first.');
+      expect(result).toContain('> - Option A');
+      expect(result).toContain('> - Option B');
+    });
+
+    it('should convert Warning component to blockquote', () => {
+      const input = '<Warning>\nDanger ahead!\n</Warning>';
+      const result = service._cleanMarkdownContent(input);
+      expect(result).toContain('> **Warning:** Danger ahead!');
+    });
+
+    it('should remove empty list items inside blockquotes', () => {
+      const input = '> -\n> text after';
+      const result = service._cleanMarkdownContent(input);
+      expect(result).not.toMatch(/^>\s*-\s*$/m);
+    });
+
+    it('should insert blank line between blockquote prose and list', () => {
+      const input = '> Some text\n> - item 1';
+      const result = service._cleanMarkdownContent(input);
+      expect(result).toBe('> Some text\n>\n> - item 1');
+    });
+
     it('should handle mixed backtick lengths correctly', () => {
       const input =
         '````markdown theme={null}\n' + '```bash\n' + 'echo "hello"\n' + '```\n' + '````';
