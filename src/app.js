@@ -321,8 +321,9 @@ class Application {
       }
 
       if (!mergeResult.success) {
-        this.logger.error('PDF generation failed, but scraping was successful');
-        // 不抛出错误，因为爬虫部分已经成功
+        throw new Error(
+          `PDF generation failed: ${mergeResult.error || 'Unknown PDF generation error'}`
+        );
       }
 
       const totalTime = Date.now() - totalStartTime;

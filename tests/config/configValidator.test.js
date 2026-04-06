@@ -136,6 +136,24 @@ describe('ConfigValidator', () => {
       expect(result.config.logLevel).toBe('info');
     });
 
+    test('应该保留 markdownPdf.cjkMainFont 配置', () => {
+      const config = {
+        rootURL: 'https://example.com',
+        pdfDir: './pdfs',
+        navLinksSelector: 'nav a',
+        contentSelector: 'main',
+        markdownPdf: {
+          enabled: true,
+          cjkMainFont: 'Source Han Sans SC',
+        },
+      };
+
+      const result = validateConfig(config);
+
+      expect(result.valid).toBe(true);
+      expect(result.config.markdownPdf.cjkMainFont).toBe('Source Han Sans SC');
+    });
+
     test('应该验证数字范围', () => {
       const config = {
         rootURL: 'https://example.com',

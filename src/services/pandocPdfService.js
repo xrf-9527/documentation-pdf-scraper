@@ -247,6 +247,7 @@ export class PandocPdfService {
       ...(this.config.markdownPdf || {}),
       ...(options || {}),
     };
+    const cjkMainFont = markdownPdfConfig.cjkMainFont || 'Noto Sans CJK SC';
 
     const args = [
       inputPath,
@@ -254,7 +255,7 @@ export class PandocPdfService {
       outputPath,
       '--pdf-engine=xelatex', // 使用 xelatex 支持中文
       '--variable',
-      'CJKmainfont=Arial Unicode MS', // 主字体（支持中文）
+      `CJKmainfont=${cjkMainFont}`, // 主字体（使用 CI 可用的开源字体，支持通过配置覆盖）
       '--variable',
       'geometry:margin=1in', // 页边距
       '--variable',

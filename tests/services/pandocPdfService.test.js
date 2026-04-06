@@ -118,6 +118,28 @@ describe('PandocPdfService', () => {
       expect(args).toContain('pygments');
       expect(args).not.toContain('github');
     });
+
+    it('should default to a CI-safe open-source CJK font', () => {
+      const args = service._buildPandocArgs('input.md', 'output.pdf', {});
+
+      expect(args).toContain('CJKmainfont=Noto Sans CJK SC');
+      expect(args).not.toContain('CJKmainfont=Arial Unicode MS');
+    });
+
+    it('should allow overriding the CJK main font from config', () => {
+      const customService = new PandocPdfService({
+        logger: mockLogger,
+        config: {
+          markdownPdf: {
+            cjkMainFont: 'Source Han Sans SC',
+          },
+        },
+      });
+
+      const args = customService._buildPandocArgs('input.md', 'output.pdf', {});
+
+      expect(args).toContain('CJKmainfont=Source Han Sans SC');
+    });
   });
 
   describe('convertContentToPdf', () => {

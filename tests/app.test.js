@@ -211,7 +211,9 @@ describe('Application', () => {
 
           const mergeResult = await this.runPythonMerge();
           if (!mergeResult.success) {
-            this.logger.error('PDF merge failed, but scraping was successful');
+            throw new Error(
+              `PDF generation failed: ${mergeResult.error || 'Unknown PDF generation error'}`
+            );
           }
 
           const totalTime = Date.now() - totalStartTime;
@@ -568,19 +570,13 @@ describe('Application', () => {
       await expect(app.run()).rejects.toThrow('Scraping failed: Scraping error');
     });
 
-    it('should continue if merge fails after successful scraping', async () => {
+    it('should fail the workflow if merge fails after successful scraping', async () => {
       mockPythonMergeService.mergePDFs.mockResolvedValue({
         success: false,
         error: 'Merge failed',
       });
 
-      const result = await app.run();
-
-      expect(result.scraping.success).toBe(true);
-      expect(result.merge.success).toBe(false);
-      expect(app.logger.error).toHaveBeenCalledWith(
-        'PDF merge failed, but scraping was successful'
-      );
+      await expect(app.run()).rejects.toThrow('PDF generation failed: Merge failed');
     });
   });
 

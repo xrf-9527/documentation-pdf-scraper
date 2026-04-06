@@ -200,4 +200,58 @@ describe('Application minimal workflow integration', () => {
       await fs.rm(tempRoot, { recursive: true, force: true });
     }
   });
+
+  it('fails the overall workflow when batch PDF generation fails', async () => {
+    const tempRoot = await createTempDir('app-batch-fail');
+    const pdfDir = path.join(tempRoot, 'pdfs');
+
+    const config = {
+      rootURL: 'https://docs.example.com/start',
+      pdfDir,
+      markdown: { outputDir: 'markdown' },
+      output: { finalPdfDirectory: 'finalPdf' },
+      markdownPdf: { batchMode: true },
+    };
+
+    const scraper = { run: vi.fn().mockResolvedValue() };
+    const progressTracker = {
+      start: vi.fn(),
+      getStats: vi.fn().mockReturnValue({ total: 2, completed: 2, failed: 0 }),
+    };
+    const fileService = {
+      ensureDirectory: vi.fn(async (dir) => {
+        await fs.mkdir(dir, { recursive: true });
+      }),
+    };
+    const markdownToPdfService = {
+      generateBatchPdf: vi.fn().mockResolvedValue({
+        success: false,
+        error: 'Pandoc exited with code 43',
+      }),
+    };
+    const pythonMergeService = { mergePDFs: vi.fn() };
+
+    const container = createMockContainer({
+      config,
+      logger: mockLogger,
+      scraper,
+      progressTracker,
+      fileService,
+      markdownToPdfService,
+      pythonMergeService,
+    });
+    mockCreateContainer.mockResolvedValue(container);
+
+    const app = new Application({ setupSignalHandlers: false });
+
+    try {
+      await expect(app.run()).rejects.toThrow('PDF generation failed: Pandoc exited with code 43');
+      expect(scraper.run).toHaveBeenCalledTimes(1);
+      expect(markdownToPdfService.generateBatchPdf).toHaveBeenCalledTimes(1);
+      expect(pythonMergeService.mergePDFs).not.toHaveBeenCalled();
+    } finally {
+      await app.cleanup();
+      await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+  });
 });

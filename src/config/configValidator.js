@@ -499,6 +499,10 @@ const configSchema = Joi.object({
       .default('github')
       .description('Code highlight theme for markdown PDF'),
 
+    cjkMainFont: Joi.string()
+      .default('Noto Sans CJK SC')
+      .description('Primary CJK font passed to Pandoc/XeLaTeX for markdown PDF generation'),
+
     toc: Joi.boolean().default(true).description('Include table of contents in PDF'),
 
     tocDepth: Joi.number()
