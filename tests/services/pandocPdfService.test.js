@@ -322,6 +322,43 @@ describe('PandocPdfService', () => {
       expect(result).toContain('suffix text');
     });
 
+    it('should strip MDX export containing embedded CSS template literal', () => {
+      // Regression: CSS inside a JS template literal has bare `}` at column 0
+      // (end of each CSS rule). Earlier regex stopped at the first such `}`
+      // and left the rest of the CSS leaking into the PDF. The real closer is
+      // always `};` with a semicolon.
+      const input = [
+        '# Quickstart',
+        '',
+        'export const InstallConfigurator = () => {',
+        '  const STYLES = `',
+        '.cc-ic {',
+        '  --ic-slate: #141413;',
+        '  font-size: 14px;',
+        '}',
+        '.dark .cc-ic {',
+        '  --ic-slate: #f0eee6;',
+        '}',
+        '.cc-ic-tab-strip {',
+        '  display: inline-flex;',
+        '}',
+        '`;',
+        '  return <div className="cc-ic">hi</div>;',
+        '};',
+        '',
+        '## Step 1',
+        'Body.',
+      ].join('\n');
+      const result = service._cleanMarkdownContent(input);
+      expect(result).not.toContain('cc-ic');
+      expect(result).not.toContain('--ic-slate');
+      expect(result).not.toContain('inline-flex');
+      expect(result).not.toContain('export const InstallConfigurator');
+      expect(result).toContain('# Quickstart');
+      expect(result).toContain('## Step 1');
+      expect(result).toContain('Body.');
+    });
+
     it('should strip multiple consecutive MDX export blocks', () => {
       const input = [
         'export const A = () => {',

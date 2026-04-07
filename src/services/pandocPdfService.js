@@ -178,9 +178,14 @@ export class PandocPdfService {
       let segment = parts[i];
 
       // 1) Multi-line: `export const|default|function|let|var X = ...` closed
-      //    by a column-0 `};` (or `});`, `})`) line.
+      //    by a column-0 `};` or `});` line. The closing semicolon is
+      //    required — this is what distinguishes the real JS closer from
+      //    bare `}` characters that appear inside embedded CSS template
+      //    literals (e.g. `const STYLES = \`.foo { color: red; }\``), which
+      //    would otherwise cause the non-greedy match to stop early and
+      //    leave the CSS content behind in the markdown.
       segment = segment.replace(
-        /^export[ \t]+(?:const|default|function|let|var)\b[\s\S]*?^\}[)]?;?[ \t]*$/gm,
+        /^export[ \t]+(?:const|default|function|let|var)\b[\s\S]*?^\}\)?;[ \t]*$/gm,
         ''
       );
 
