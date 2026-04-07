@@ -208,6 +208,111 @@ export class PandocPdfService {
   }
 
   /**
+   * Strip PascalCase JSX component tags (`<Foo ... />`, `<Foo>`, `</Foo>`)
+   * using a brace-aware scanner that correctly skips over nested JSX
+   * inside attribute values like `<Tag attr={<Inner />} />`.
+   *
+   * Rules:
+   * - Tag name must start with an uppercase letter (JSX convention).
+   * - Inside the attribute list, `{...}` expressions are tracked with a
+   *   depth counter, so any `>` encountered while `depth > 0` is ignored.
+   * - String attribute values (`"..."` / `'...'`) are skipped verbatim.
+   * - If no closing `>` is found before end of input, the scanner leaves
+   *   the text untouched and moves on.
+   *
+   * Does not attempt to handle backtick template literals inside JSX
+   * attributes; those are exceedingly rare in scraped MDX and can be
+   * added if a real case shows up.
+   *
+   * @param {string} content
+   * @returns {string}
+   * @private
+   */
+  _stripPascalCaseJsxTags(content) {
+    if (!content) return content;
+
+    const len = content.length;
+    let out = '';
+    let i = 0;
+
+    while (i < len) {
+      const ch = content[i];
+      if (ch !== '<') {
+        out += ch;
+        i++;
+        continue;
+      }
+
+      // Possible tag start. Allow `</` closing form.
+      let nameStart = i + 1;
+      if (nameStart < len && content[nameStart] === '/') nameStart++;
+
+      const nameChar = content[nameStart];
+      if (!nameChar || nameChar < 'A' || nameChar > 'Z') {
+        // Not a PascalCase JSX tag — keep the `<` as-is.
+        out += ch;
+        i++;
+        continue;
+      }
+
+      // Scan the tag name (letters/digits).
+      let afterName = nameStart + 1;
+      while (
+        afterName < len &&
+        ((content[afterName] >= 'A' && content[afterName] <= 'Z') ||
+          (content[afterName] >= 'a' && content[afterName] <= 'z') ||
+          (content[afterName] >= '0' && content[afterName] <= '9'))
+      ) {
+        afterName++;
+      }
+
+      // Scan attributes until balanced `>` is found.
+      let depth = 0;
+      let inString = false;
+      let stringChar = '';
+      let end = -1;
+      for (let m = afterName; m < len; m++) {
+        const c = content[m];
+        const prev = m > 0 ? content[m - 1] : '';
+
+        if (inString) {
+          if (c === stringChar && prev !== '\\') {
+            inString = false;
+          }
+          continue;
+        }
+
+        if (c === '"' || c === "'") {
+          inString = true;
+          stringChar = c;
+          continue;
+        }
+
+        if (c === '{') {
+          depth++;
+        } else if (c === '}') {
+          if (depth > 0) depth--;
+        } else if (c === '>' && depth === 0) {
+          end = m;
+          break;
+        }
+      }
+
+      if (end === -1) {
+        // Malformed / unterminated — skip past `<` only.
+        out += ch;
+        i++;
+        continue;
+      }
+
+      // Drop the entire tag [i .. end].
+      i = end + 1;
+    }
+
+    return out;
+  }
+
+  /**
    * 清理 Markdown 内容，修复 Pandoc 不支持的语法
    * @param {string} content
    * @returns {string}
@@ -281,10 +386,16 @@ export class PandocPdfService {
       }
     );
 
-    // Remove any remaining JSX/MDX component tags (PascalCase = JSX convention)
-    // Strips only the tags, inner content is preserved
+    // Remove any remaining JSX/MDX component tags (PascalCase = JSX convention).
+    // Strips only the tags, inner content is preserved.
     // e.g. <Frame><img .../></Frame> -> <img .../>
-    cleaned = cleaned.replace(/<\/?[A-Z][A-Za-z]*(?:\s[^>]*)?\/?>/g, '');
+    //
+    // Uses a brace-aware scanner rather than a plain regex because JSX
+    // attributes can embed nested JSX, e.g.
+    //   <Experiment treatment={<InstallConfigurator />} />
+    // A naive `<[A-Z]...[^>]*>` would stop at the inner `/>` and leave
+    // `} />` behind as garbage prose.
+    cleaned = this._stripPascalCaseJsxTags(cleaned);
 
     // 0.1 修复缩进
     // 移除 2-4 个空格的缩进 (修复 <Step> 内容被识别为代码块的问题)

@@ -322,6 +322,38 @@ describe('PandocPdfService', () => {
       expect(result).toContain('suffix text');
     });
 
+    it('should strip JSX tag whose attribute value is a nested JSX element', () => {
+      // Regression: `<Experiment treatment={<InstallConfigurator />} />`
+      // A naive `<[A-Z]...[^>]*>` stops at the inner `/>` and leaves
+      // `} />` behind as prose. The brace-aware scanner must drop the
+      // whole outer tag.
+      const input = [
+        'before',
+        '',
+        '<Experiment flag="quickstart-install-configurator" treatment={<InstallConfigurator />} />',
+        '',
+        'after',
+      ].join('\n');
+      const result = service._cleanMarkdownContent(input);
+      expect(result).not.toContain('Experiment');
+      expect(result).not.toContain('InstallConfigurator');
+      expect(result).not.toContain('} />');
+      expect(result).not.toContain('/>');
+      expect(result).toContain('before');
+      expect(result).toContain('after');
+    });
+
+    it('should strip JSX tag with multiple nested JSX attribute values', () => {
+      const input =
+        '<Card icon={<Icon name="book" />} action={<Button label="Go" />}>Content</Card>';
+      const result = service._cleanMarkdownContent(input);
+      expect(result).not.toContain('<Card');
+      expect(result).not.toContain('</Card');
+      expect(result).not.toContain('<Icon');
+      expect(result).not.toContain('<Button');
+      expect(result).toContain('Content');
+    });
+
     it('should strip MDX export containing embedded CSS template literal', () => {
       // Regression: CSS inside a JS template literal has bare `}` at column 0
       // (end of each CSS rule). Earlier regex stopped at the first such `}`
