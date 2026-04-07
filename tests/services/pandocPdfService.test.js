@@ -453,6 +453,28 @@ describe('PandocPdfService', () => {
       const result = service._cleanMarkdownContent(input);
       expect(result).toBe(expected);
     });
+
+    it('should preserve nested code fences when outer uses more backticks (regex fallback)', () => {
+      // Regression: the regex fence splitter must match closing delimiter to
+      // the opener's character AND length. A 3-backtick line inside a
+      // 4-backtick block must NOT end the protected region.
+      const input = [
+        '````markdown',
+        'export const SHOULD_SURVIVE = true;',
+        '```bash',
+        'export VAR=1',
+        '```',
+        '````',
+        '',
+        "import Leak from './leak';",
+      ].join('\n');
+      const result = service._stripMdxModuleDeclarations(input);
+      // The export inside the 4-backtick block must survive
+      expect(result).toContain('export const SHOULD_SURVIVE = true;');
+      expect(result).toContain('export VAR=1');
+      // The import outside the fence must be stripped
+      expect(result).not.toMatch(/^import Leak/m);
+    });
   });
 
   describe('_runPandoc', () => {

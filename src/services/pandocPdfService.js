@@ -173,41 +173,71 @@ export class PandocPdfService {
   _stripMdxModuleDeclarations(content) {
     if (!content) return content;
 
-    // Split by fenced code blocks (``` or ~~~). Capture groups keep the
-    // fences in the split result so we can reassemble them untouched.
-    const parts = content.split(/(^(?:`{3,}|~{3,})[^\n]*\n[\s\S]*?^(?:`{3,}|~{3,})[ \t]*$)/gm);
+    // Walk line-by-line, tracking fenced code blocks properly:
+    // a closing fence must use the same character (` or ~) as the opener
+    // and have at least as many repetitions (CommonMark spec).
+    const lines = content.split('\n');
+    const proseRanges = []; // [startIdx, endIdx) of prose line ranges
+    let inFence = false;
+    let fenceChar = '';
+    let fenceCount = 0;
+    let proseStart = 0;
 
-    for (let i = 0; i < parts.length; i += 2) {
-      let segment = parts[i];
+    for (let i = 0; i < lines.length; i++) {
+      const fenceMatch = lines[i].match(/^(`{3,}|~{3,})/);
 
-      // 1) Multi-line: `export const|default|function|let|var X = ...` closed
-      //    by a column-0 `};` or `});` line. The closing semicolon is
-      //    required — this is what distinguishes the real JS closer from
-      //    bare `}` characters that appear inside embedded CSS template
-      //    literals (e.g. `const STYLES = \`.foo { color: red; }\``), which
-      //    would otherwise cause the non-greedy match to stop early and
-      //    leave the CSS content behind in the markdown.
+      if (!inFence && fenceMatch) {
+        // Opening fence — save preceding prose range
+        if (i > proseStart) proseRanges.push([proseStart, i]);
+        inFence = true;
+        fenceChar = fenceMatch[1][0];
+        fenceCount = fenceMatch[1].length;
+      } else if (
+        inFence &&
+        fenceMatch &&
+        fenceMatch[1][0] === fenceChar &&
+        fenceMatch[1].length >= fenceCount &&
+        lines[i].slice(fenceMatch[1].length).trim() === ''
+      ) {
+        // Valid closing fence
+        inFence = false;
+        proseStart = i + 1;
+      }
+    }
+    // Remaining lines after last fence are prose
+    if (!inFence && proseStart < lines.length) {
+      proseRanges.push([proseStart, lines.length]);
+    }
+
+    // Strip MDX declarations only in prose segments
+    for (const [start, end] of proseRanges) {
+      let segment = lines.slice(start, end).join('\n');
+
+      // 1) Multi-line export closed by column-0 `};` or `});`
       segment = segment.replace(
         /^export[ \t]+(?:const|default|function|let|var)\b[\s\S]*?^\}\)?;[ \t]*$/gm,
         ''
       );
 
-      // 2) Single-line: `export const foo = 'bar';`
+      // 2) Single-line export
       segment = segment.replace(
         /^export[ \t]+(?:const|default|function|let|var)\b[^\n]*;[ \t]*$/gm,
         ''
       );
 
-      // 3) Top-level MDX imports: `import X from '...';`
+      // 3) Top-level MDX imports
       segment = segment.replace(
         /^import[ \t]+[^\n;]*?\bfrom[ \t]+['"][^'"\n]+['"];?[ \t]*$/gm,
         ''
       );
 
-      parts[i] = segment;
+      const newLines = segment.split('\n');
+      for (let i = start; i < end; i++) {
+        lines[i] = newLines[i - start];
+      }
     }
 
-    return parts.join('');
+    return lines.join('\n');
   }
 
   /**
