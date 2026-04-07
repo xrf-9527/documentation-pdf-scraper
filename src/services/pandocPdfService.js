@@ -615,6 +615,13 @@ export class PandocPdfService {
     // e.g. "> text\n> - item" -> "> text\n>\n> - item"
     cleaned = cleaned.replace(/^(>.*[^\s-*].*)\n(>\s*[-*]\s+\S)/gm, '$1\n>\n$2');
 
+    // 4c. Convert ATX headings inside blockquotes to bold text.
+    // Pandoc 3.9+ inserts `\mbox{}%` before `\subsection` inside `\begin{quote}`,
+    // but older Pandoc (e.g. Ubuntu 24.04 ships 3.1.x) does not, which causes
+    // `LaTeX Error: Something's wrong--perhaps a missing \item` at `\end{quote}`.
+    // Bold preserves visual emphasis without triggering quote+section nesting.
+    cleaned = cleaned.replace(/^(>\s*)#{1,6}\s+(.+?)\s*$/gm, '$1**$2**');
+
     // 5. 将图片 URL 中的 fm=webp 替换为 fm=png（LaTeX 不支持 webp 格式）
     cleaned = cleaned.replace(/fm=webp/g, 'fm=png');
 

@@ -59,11 +59,10 @@ jobs:
           enable-cache: true
           python-version: '3.10'
 
-      - name: Install system dependencies
+      - name: Install LaTeX and fonts
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            pandoc \
             texlive-xetex \
             texlive-fonts-recommended \
             texlive-fonts-extra \
@@ -72,6 +71,11 @@ jobs:
             fonts-noto-cjk \
             fonts-lmodern \
             lmodern
+
+      - name: Install latest Pandoc
+        uses: r-lib/actions/setup-pandoc@v2
+        with:
+          pandoc-version: 'latest'
 
       - name: Install project dependencies
         run: |
