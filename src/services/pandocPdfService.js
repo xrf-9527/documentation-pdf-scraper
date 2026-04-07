@@ -2,6 +2,9 @@
 import { spawn } from 'child_process';
 import path from 'path';
 import fs from 'fs';
+import { fromMarkdown } from 'mdast-util-from-markdown';
+import { mdxFromMarkdown } from 'mdast-util-mdx';
+import { mdxjs } from 'micromark-extension-mdxjs';
 
 /**
  * PandocPdfService
@@ -313,6 +316,195 @@ export class PandocPdfService {
   }
 
   /**
+   * Strip all MDX constructs from content using AST-based parsing for maximum
+   * reliability. Handles:
+   * - `mdxjsEsm`: module-level `export`/`import` declarations
+   * - `mdxJsxFlowElement`/`mdxJsxTextElement`: JSX components
+   *   - Known components are transformed (Info→blockquote, Step→header, etc.)
+   *   - Unknown PascalCase components have tags stripped, children preserved
+   *   - HTML elements (lowercase) are preserved
+   * - `mdxFlowExpression`/`mdxTextExpression`: `{expression}` blocks
+   *
+   * Falls back to regex-based stripping if AST parsing fails.
+   *
+   * @param {string} content
+   * @returns {string}
+   * @private
+   */
+  _stripMdxWithAst(content) {
+    if (!content) return content;
+
+    try {
+      const tree = fromMarkdown(content, {
+        extensions: [mdxjs()],
+        mdastExtensions: [mdxFromMarkdown()],
+      });
+
+      const edits = [];
+
+      const getAttr = (node, attrName) => {
+        const attr = node.attributes?.find((a) => a.name === attrName);
+        if (!attr) return '';
+        return typeof attr.value === 'string' ? attr.value : '';
+      };
+
+      const collectEdits = (node) => {
+        if (node.type === 'mdxjsEsm') {
+          edits.push([node.position.start.offset, node.position.end.offset, '']);
+          return;
+        }
+
+        if (node.type === 'mdxFlowExpression' || node.type === 'mdxTextExpression') {
+          edits.push([node.position.start.offset, node.position.end.offset, '']);
+          return;
+        }
+
+        if (node.type === 'mdxJsxFlowElement' || node.type === 'mdxJsxTextElement') {
+          const name = node.name;
+          const start = node.position.start.offset;
+          const end = node.position.end.offset;
+
+          // Lowercase/null → HTML element, recurse into children only
+          if (!name || name[0] < 'A' || name[0] > 'Z') {
+            if (node.children) node.children.forEach(collectEdits);
+            return;
+          }
+
+          // Extract and recursively process inner content
+          let innerContent = '';
+          if (node.children?.length > 0) {
+            const innerStart = node.children[0].position.start.offset;
+            const innerEnd = node.children[node.children.length - 1].position.end.offset;
+            innerContent = content.slice(innerStart, innerEnd);
+            innerContent = this._stripMdxWithAst(innerContent);
+          }
+
+          let replacement;
+          switch (name) {
+            case 'Steps':
+            case 'Tabs':
+            case 'AccordionGroup':
+              replacement = innerContent;
+              break;
+            case 'Step': {
+              const title = getAttr(node, 'title');
+              replacement = title ? `\n### ${title}\n\n${innerContent}\n` : `\n${innerContent}\n`;
+              break;
+            }
+            case 'Tab': {
+              const title = getAttr(node, 'title');
+              replacement = title ? `\n#### ${title}\n\n${innerContent}\n` : `\n${innerContent}\n`;
+              break;
+            }
+            case 'Accordion': {
+              const title = getAttr(node, 'title');
+              replacement = title ? `\n#### ${title}\n\n${innerContent}\n` : `\n${innerContent}\n`;
+              break;
+            }
+            case 'Info':
+            case 'Tip':
+            case 'Warning':
+            case 'Note': {
+              const label = name === 'Tip' ? 'Tip' : name === 'Warning' ? 'Warning' : 'Note';
+              replacement = this._contentToBlockquote(innerContent, label);
+              break;
+            }
+            default:
+              replacement = innerContent;
+              break;
+          }
+
+          edits.push([start, end, replacement]);
+          return;
+        }
+
+        // For all other node types, recurse into children
+        if (node.children) node.children.forEach(collectEdits);
+      };
+
+      collectEdits(tree);
+
+      // Sort by start offset descending, apply from end to start
+      edits.sort((a, b) => b[0] - a[0]);
+
+      let result = content;
+      for (const [s, e, replacement] of edits) {
+        result = result.slice(0, s) + replacement + result.slice(e);
+      }
+
+      return result;
+    } catch (error) {
+      this.logger?.warn?.('MDX AST parse failed, falling back to regex', {
+        error: error.message,
+      });
+      return this._stripMdxWithRegex(content);
+    }
+  }
+
+  /**
+   * Regex/scanner fallback for MDX stripping when AST parsing fails.
+   * Combines module declaration stripping, named component transforms,
+   * and PascalCase JSX tag stripping.
+   *
+   * @param {string} content
+   * @returns {string}
+   * @private
+   */
+  _stripMdxWithRegex(content) {
+    if (!content) return content;
+
+    let result = this._stripMdxModuleDeclarations(content);
+
+    result = result.replace(/<\/?Steps>/g, '');
+    result = result.replace(/<Step[^>]*title="([^"]+)"[^>]*>/g, '\n### $1\n');
+    result = result.replace(/<\/Step>/g, '\n');
+    result = result.replace(/<\/?Tabs>/g, '');
+    result = result.replace(/<Tab[^>]*title="([^"]+)"[^>]*>/g, '\n#### $1\n');
+    result = result.replace(/<\/Tab>/g, '\n');
+    result = result.replace(/<\/?AccordionGroup>/g, '');
+    result = result.replace(/<Accordion[^>]*title="([^"]+)"[^>]*>/g, '\n#### $1\n');
+    result = result.replace(/<\/Accordion>/g, '\n');
+    result = result.replace(
+      /<(Info|Tip|Warning|Note)>([\s\S]*?)<\/\1>/g,
+      (_match, tag, innerContent) => {
+        const label = tag === 'Tip' ? 'Tip' : tag === 'Warning' ? 'Warning' : 'Note';
+        return this._contentToBlockquote(innerContent, label);
+      }
+    );
+
+    result = this._stripPascalCaseJsxTags(result);
+
+    return result;
+  }
+
+  /**
+   * Convert text content to a markdown blockquote with a label.
+   *
+   * @param {string} innerContent
+   * @param {string} label
+   * @returns {string}
+   * @private
+   */
+  _contentToBlockquote(innerContent, label) {
+    if (!innerContent?.trim()) return '';
+
+    const lines = innerContent.split('\n');
+    const quotedLines = [];
+    let firstContent = true;
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      if (firstContent) {
+        quotedLines.push(`> **${label}:** ${trimmed}`);
+        firstContent = false;
+      } else {
+        quotedLines.push(`> ${trimmed}`);
+      }
+    }
+    return '\n' + quotedLines.join('\n') + '\n';
+  }
+
+  /**
    * 清理 Markdown 内容，修复 Pandoc 不支持的语法
    * @param {string} content
    * @returns {string}
@@ -321,81 +513,14 @@ export class PandocPdfService {
   _cleanMarkdownContent(content) {
     if (!content) return content;
 
-    // 00. Strip MDX module-level `export`/`import` declarations that leak into
-    // markdown when .mdx pages are scraped without running through a JSX
-    // compiler. Pandoc otherwise treats these as prose and emits invalid LaTeX
-    // (e.g. JS template literal backticks opening math mode). Must run before
-    // any other transformation so that top-level `};` is still at column 0.
-    let cleaned = this._stripMdxModuleDeclarations(content);
+    // 00. Strip all MDX constructs (module-level JS, JSX components, expressions)
+    // using AST-based approach with regex fallback.
+    let cleaned = this._stripMdxWithAst(content);
 
     // 1. 修复代码块中的 theme={...} 属性
     // ```markdown theme={null} -> ```markdown
     // 支持任意数量的反引号 (>=3)
     cleaned = cleaned.replace(/^(`{3,})(\w+)\s+theme=\{[^}]+\}/gm, '$1$2');
-
-    // 0. 处理 MDX/JSX 自定义组件
-
-    // <Steps> / </Steps> -> remove
-    cleaned = cleaned.replace(/<\/?Steps>/g, '');
-
-    // <Step title="..."> -> ### ...
-    cleaned = cleaned.replace(/<Step[^>]*title="([^"]+)"[^>]*>/g, '\n### $1\n');
-
-    // </Step> -> remove
-    cleaned = cleaned.replace(/<\/Step>/g, '\n');
-
-    // <Tabs> / </Tabs> -> remove (keep content of all tabs)
-    cleaned = cleaned.replace(/<\/?Tabs>/g, '');
-
-    // <Tab title="..."> -> #### ... (use H4 for tab titles)
-    cleaned = cleaned.replace(/<Tab[^>]*title="([^"]+)"[^>]*>/g, '\n#### $1\n');
-
-    // </Tab> -> remove
-    cleaned = cleaned.replace(/<\/Tab>/g, '\n');
-
-    // <AccordionGroup> / </AccordionGroup> -> remove
-    cleaned = cleaned.replace(/<\/?AccordionGroup>/g, '');
-
-    // <Accordion title="..." ...> -> #### ...
-    cleaned = cleaned.replace(/<Accordion[^>]*title="([^"]+)"[^>]*>/g, '\n#### $1\n');
-
-    // </Accordion> -> remove
-    cleaned = cleaned.replace(/<\/Accordion>/g, '\n');
-
-    // <Info|Tip|Warning|Note> -> blockquote with marker
-    // Convert the entire block content so every inner line gets the `> ` prefix.
-    // This prevents orphaned list items outside the blockquote that break LaTeX.
-    cleaned = cleaned.replace(
-      /<(Info|Tip|Warning|Note)>([\s\S]*?)<\/\1>/g,
-      (_match, tag, innerContent) => {
-        const label = tag === 'Tip' ? 'Tip' : tag === 'Warning' ? 'Warning' : 'Note';
-        const lines = innerContent.split('\n');
-        const quotedLines = [];
-        let firstContent = true;
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed) continue; // skip blank lines inside the component
-          if (firstContent) {
-            quotedLines.push(`> **${label}:** ${trimmed}`);
-            firstContent = false;
-          } else {
-            quotedLines.push(`> ${trimmed}`);
-          }
-        }
-        return '\n' + quotedLines.join('\n') + '\n';
-      }
-    );
-
-    // Remove any remaining JSX/MDX component tags (PascalCase = JSX convention).
-    // Strips only the tags, inner content is preserved.
-    // e.g. <Frame><img .../></Frame> -> <img .../>
-    //
-    // Uses a brace-aware scanner rather than a plain regex because JSX
-    // attributes can embed nested JSX, e.g.
-    //   <Experiment treatment={<InstallConfigurator />} />
-    // A naive `<[A-Z]...[^>]*>` would stop at the inner `/>` and leave
-    // `} />` behind as garbage prose.
-    cleaned = this._stripPascalCaseJsxTags(cleaned);
 
     // 0.1 修复缩进
     // 移除 2-4 个空格的缩进 (修复 <Step> 内容被识别为代码块的问题)
