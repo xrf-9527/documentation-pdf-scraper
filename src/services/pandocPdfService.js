@@ -615,6 +615,42 @@ export class PandocPdfService {
     // e.g. "> text\n> - item" -> "> text\n>\n> - item"
     cleaned = cleaned.replace(/^(>.*[^\s-*].*)\n(>\s*[-*]\s+\S)/gm, '$1\n>\n$2');
 
+    // 4c. Convert ATX headings inside blockquotes to bold text.
+    // Pandoc 3.9+ inserts `\mbox{}%` before `\subsection` inside `\begin{quote}`,
+    // but older Pandoc (e.g. Ubuntu 24.04 ships 3.1.x) does not, which causes
+    // `LaTeX Error: Something's wrong--perhaps a missing \item` at `\end{quote}`.
+    // Bold preserves visual emphasis without triggering quote+section nesting.
+    //
+    // Fence-aware: skip lines inside fenced code blocks (with optional `> `
+    // blockquote prefix) so markdown examples that show heading syntax inside
+    // ` ``` ... ``` ` blocks are not corrupted. Closing fences must use the
+    // same character (` or ~) and at least as many repetitions as the opener
+    // (CommonMark spec).
+    {
+      const lines = cleaned.split('\n');
+      let inFence = false;
+      let fenceChar = '';
+      let fenceCount = 0;
+      for (let i = 0; i < lines.length; i++) {
+        const fenceMatch = lines[i].match(/^>?\s*(`{3,}|~{3,})/);
+        if (fenceMatch) {
+          const fc = fenceMatch[1][0];
+          const fcCount = fenceMatch[1].length;
+          if (!inFence) {
+            inFence = true;
+            fenceChar = fc;
+            fenceCount = fcCount;
+          } else if (fc === fenceChar && fcCount >= fenceCount) {
+            inFence = false;
+          }
+          continue;
+        }
+        if (inFence) continue;
+        lines[i] = lines[i].replace(/^(>\s*)#{1,6}\s+(.+?)\s*$/, '$1**$2**');
+      }
+      cleaned = lines.join('\n');
+    }
+
     // 5. 将图片 URL 中的 fm=webp 替换为 fm=png（LaTeX 不支持 webp 格式）
     cleaned = cleaned.replace(/fm=webp/g, 'fm=png');
 
