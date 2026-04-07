@@ -279,6 +279,104 @@ describe('PandocPdfService', () => {
       expect(result).toBe('> Some text\n>\n> - item 1');
     });
 
+    it('should strip multi-line MDX export const declarations', () => {
+      const input = [
+        '# Quickstart',
+        '',
+        'export const InstallConfigurator = () => {',
+        "  const TERM = { mac: 'curl -fsSL https://claude.ai/install.sh | bash' };",
+        '  return <div>stuff</div>;',
+        '};',
+        '',
+        '## Step 1',
+        'Real content.',
+      ].join('\n');
+      const result = service._cleanMarkdownContent(input);
+      expect(result).not.toContain('export const InstallConfigurator');
+      expect(result).not.toContain('const TERM');
+      expect(result).toContain('# Quickstart');
+      expect(result).toContain('## Step 1');
+      expect(result).toContain('Real content.');
+    });
+
+    it('should strip MDX export that uses template literals with backticks', () => {
+      // Reproduces the quickstart.md Experiment helper shape that triggered
+      // the CI LaTeX error: backtick template literals confused pandoc into
+      // opening math mode inside escaped prose.
+      const input = [
+        'prefix text',
+        '',
+        'export const Experiment = ({flag, treatment, children}) => {',
+        '  const ajsMatch = document.cookie.match(/(?:^|; )ajs=([^;]+)/);',
+        '  const vid = decodeURIComponent(ajsMatch[1]).replace(/^"|"$/g, "");',
+        '  document.cookie = `ajs=${vid}; domain=.claude.com`;',
+        '  return treatment;',
+        '};',
+        '',
+        'suffix text',
+      ].join('\n');
+      const result = service._cleanMarkdownContent(input);
+      expect(result).not.toContain('export const Experiment');
+      expect(result).not.toContain('document.cookie');
+      expect(result).toContain('prefix text');
+      expect(result).toContain('suffix text');
+    });
+
+    it('should strip multiple consecutive MDX export blocks', () => {
+      const input = [
+        'export const A = () => {',
+        '  return 1;',
+        '};',
+        '',
+        'export const B = () => {',
+        '  return 2;',
+        '};',
+        '',
+        '# Real title',
+      ].join('\n');
+      const result = service._cleanMarkdownContent(input);
+      expect(result).not.toContain('export const A');
+      expect(result).not.toContain('export const B');
+      expect(result).toContain('# Real title');
+    });
+
+    it('should preserve export/import lines inside fenced code blocks', () => {
+      // Python example containing `import`, and shell `export VAR=...` must
+      // survive because they are inside fenced code blocks.
+      const input = [
+        '# Example',
+        '',
+        '```python',
+        'import json',
+        'import sys',
+        'print(json.dumps({"ok": True}))',
+        '```',
+        '',
+        '```bash',
+        'export MAX_TOKENS=50000',
+        'claude',
+        '```',
+      ].join('\n');
+      const result = service._cleanMarkdownContent(input);
+      expect(result).toContain('import json');
+      expect(result).toContain('import sys');
+      expect(result).toContain('export MAX_TOKENS=50000');
+    });
+
+    it('should strip top-level MDX import statements', () => {
+      const input = [
+        "import Foo from '@site/components/Foo';",
+        'import Bar from "./Bar";',
+        '',
+        '# Page title',
+        'body',
+      ].join('\n');
+      const result = service._cleanMarkdownContent(input);
+      expect(result).not.toMatch(/^import\s/m);
+      expect(result).toContain('# Page title');
+      expect(result).toContain('body');
+    });
+
     it('should handle mixed backtick lengths correctly', () => {
       const input =
         '````markdown theme={null}\n' + '```bash\n' + 'echo "hello"\n' + '```\n' + '````';

@@ -151,6 +151,58 @@ export class PandocPdfService {
   }
 
   /**
+   * Strip MDX module-level `export`/`import` declarations that leak into
+   * markdown when .mdx pages are scraped without JSX compilation.
+   *
+   * These appear at column 0 in the source (by MDX convention) and their
+   * multi-line bodies close with a column-0 `};` line. Because the JS code
+   * contains template literals with backticks, when Pandoc treats it as prose
+   * it emits `\(` (inline math open) inside escaped regexes, causing
+   * "Extra }, or forgotten $." LaTeX errors.
+   *
+   * Preserves fenced code blocks so in-doc JS/Python examples that happen to
+   * start with `export` or `import` are not affected.
+   *
+   * @param {string} content
+   * @returns {string}
+   * @private
+   */
+  _stripMdxModuleDeclarations(content) {
+    if (!content) return content;
+
+    // Split by fenced code blocks (``` or ~~~). Capture groups keep the
+    // fences in the split result so we can reassemble them untouched.
+    const parts = content.split(/(^(?:`{3,}|~{3,})[^\n]*\n[\s\S]*?^(?:`{3,}|~{3,})[ \t]*$)/gm);
+
+    for (let i = 0; i < parts.length; i += 2) {
+      let segment = parts[i];
+
+      // 1) Multi-line: `export const|default|function|let|var X = ...` closed
+      //    by a column-0 `};` (or `});`, `})`) line.
+      segment = segment.replace(
+        /^export[ \t]+(?:const|default|function|let|var)\b[\s\S]*?^\}[)]?;?[ \t]*$/gm,
+        ''
+      );
+
+      // 2) Single-line: `export const foo = 'bar';`
+      segment = segment.replace(
+        /^export[ \t]+(?:const|default|function|let|var)\b[^\n]*;[ \t]*$/gm,
+        ''
+      );
+
+      // 3) Top-level MDX imports: `import X from '...';`
+      segment = segment.replace(
+        /^import[ \t]+[^\n;]*?\bfrom[ \t]+['"][^'"\n]+['"];?[ \t]*$/gm,
+        ''
+      );
+
+      parts[i] = segment;
+    }
+
+    return parts.join('');
+  }
+
+  /**
    * 清理 Markdown 内容，修复 Pandoc 不支持的语法
    * @param {string} content
    * @returns {string}
@@ -159,10 +211,17 @@ export class PandocPdfService {
   _cleanMarkdownContent(content) {
     if (!content) return content;
 
+    // 00. Strip MDX module-level `export`/`import` declarations that leak into
+    // markdown when .mdx pages are scraped without running through a JSX
+    // compiler. Pandoc otherwise treats these as prose and emits invalid LaTeX
+    // (e.g. JS template literal backticks opening math mode). Must run before
+    // any other transformation so that top-level `};` is still at column 0.
+    let cleaned = this._stripMdxModuleDeclarations(content);
+
     // 1. 修复代码块中的 theme={...} 属性
     // ```markdown theme={null} -> ```markdown
     // 支持任意数量的反引号 (>=3)
-    let cleaned = content.replace(/^(`{3,})(\w+)\s+theme=\{[^}]+\}/gm, '$1$2');
+    cleaned = cleaned.replace(/^(`{3,})(\w+)\s+theme=\{[^}]+\}/gm, '$1$2');
 
     // 0. 处理 MDX/JSX 自定义组件
 
