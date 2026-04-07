@@ -2,6 +2,9 @@
 import { spawn } from 'child_process';
 import path from 'path';
 import fs from 'fs';
+import { fromMarkdown } from 'mdast-util-from-markdown';
+import { mdxFromMarkdown } from 'mdast-util-mdx';
+import { mdxjs } from 'micromark-extension-mdxjs';
 
 /**
  * PandocPdfService
@@ -151,6 +154,387 @@ export class PandocPdfService {
   }
 
   /**
+   * Strip MDX module-level `export`/`import` declarations that leak into
+   * markdown when .mdx pages are scraped without JSX compilation.
+   *
+   * These appear at column 0 in the source (by MDX convention) and their
+   * multi-line bodies close with a column-0 `};` line. Because the JS code
+   * contains template literals with backticks, when Pandoc treats it as prose
+   * it emits `\(` (inline math open) inside escaped regexes, causing
+   * "Extra }, or forgotten $." LaTeX errors.
+   *
+   * Preserves fenced code blocks so in-doc JS/Python examples that happen to
+   * start with `export` or `import` are not affected.
+   *
+   * @param {string} content
+   * @returns {string}
+   * @private
+   */
+  _stripMdxModuleDeclarations(content) {
+    if (!content) return content;
+
+    // Walk line-by-line, tracking fenced code blocks properly:
+    // a closing fence must use the same character (` or ~) as the opener
+    // and have at least as many repetitions (CommonMark spec).
+    const lines = content.split('\n');
+    const proseRanges = []; // [startIdx, endIdx) of prose line ranges
+    let inFence = false;
+    let fenceChar = '';
+    let fenceCount = 0;
+    let proseStart = 0;
+
+    for (let i = 0; i < lines.length; i++) {
+      const fenceMatch = lines[i].match(/^(`{3,}|~{3,})/);
+
+      if (!inFence && fenceMatch) {
+        // Opening fence — save preceding prose range
+        if (i > proseStart) proseRanges.push([proseStart, i]);
+        inFence = true;
+        fenceChar = fenceMatch[1][0];
+        fenceCount = fenceMatch[1].length;
+      } else if (
+        inFence &&
+        fenceMatch &&
+        fenceMatch[1][0] === fenceChar &&
+        fenceMatch[1].length >= fenceCount &&
+        lines[i].slice(fenceMatch[1].length).trim() === ''
+      ) {
+        // Valid closing fence
+        inFence = false;
+        proseStart = i + 1;
+      }
+    }
+    // Remaining lines after last fence are prose
+    if (!inFence && proseStart < lines.length) {
+      proseRanges.push([proseStart, lines.length]);
+    }
+
+    // Strip MDX declarations only in prose segments
+    for (const [start, end] of proseRanges) {
+      let segment = lines.slice(start, end).join('\n');
+
+      // 1) Multi-line export closed by column-0 `};` or `});`
+      segment = segment.replace(
+        /^export[ \t]+(?:const|default|function|let|var)\b[\s\S]*?^\}\)?;[ \t]*$/gm,
+        ''
+      );
+
+      // 2) Single-line export
+      segment = segment.replace(
+        /^export[ \t]+(?:const|default|function|let|var)\b[^\n]*;[ \t]*$/gm,
+        ''
+      );
+
+      // 3) Top-level MDX imports
+      segment = segment.replace(
+        /^import[ \t]+[^\n;]*?\bfrom[ \t]+['"][^'"\n]+['"];?[ \t]*$/gm,
+        ''
+      );
+
+      const newLines = segment.split('\n');
+      for (let i = start; i < end; i++) {
+        lines[i] = newLines[i - start];
+      }
+    }
+
+    return lines.join('\n');
+  }
+
+  /**
+   * Strip PascalCase JSX component tags (`<Foo ... />`, `<Foo>`, `</Foo>`)
+   * using a brace-aware scanner that correctly skips over nested JSX
+   * inside attribute values like `<Tag attr={<Inner />} />`.
+   *
+   * Rules:
+   * - Tag name must start with an uppercase letter (JSX convention).
+   * - Inside the attribute list, `{...}` expressions are tracked with a
+   *   depth counter, so any `>` encountered while `depth > 0` is ignored.
+   * - String attribute values (`"..."` / `'...'`) are skipped verbatim.
+   * - If no closing `>` is found before end of input, the scanner leaves
+   *   the text untouched and moves on.
+   *
+   * Does not attempt to handle backtick template literals inside JSX
+   * attributes; those are exceedingly rare in scraped MDX and can be
+   * added if a real case shows up.
+   *
+   * @param {string} content
+   * @returns {string}
+   * @private
+   */
+  _stripPascalCaseJsxTags(content) {
+    if (!content) return content;
+
+    const len = content.length;
+    let out = '';
+    let i = 0;
+
+    while (i < len) {
+      const ch = content[i];
+      if (ch !== '<') {
+        out += ch;
+        i++;
+        continue;
+      }
+
+      // Possible tag start. Allow `</` closing form.
+      let nameStart = i + 1;
+      if (nameStart < len && content[nameStart] === '/') nameStart++;
+
+      const nameChar = content[nameStart];
+      if (!nameChar || nameChar < 'A' || nameChar > 'Z') {
+        // Not a PascalCase JSX tag — keep the `<` as-is.
+        out += ch;
+        i++;
+        continue;
+      }
+
+      // Scan the tag name (letters/digits).
+      let afterName = nameStart + 1;
+      while (
+        afterName < len &&
+        ((content[afterName] >= 'A' && content[afterName] <= 'Z') ||
+          (content[afterName] >= 'a' && content[afterName] <= 'z') ||
+          (content[afterName] >= '0' && content[afterName] <= '9'))
+      ) {
+        afterName++;
+      }
+
+      // Scan attributes until balanced `>` is found.
+      let depth = 0;
+      let inString = false;
+      let stringChar = '';
+      let end = -1;
+      for (let m = afterName; m < len; m++) {
+        const c = content[m];
+        const prev = m > 0 ? content[m - 1] : '';
+
+        if (inString) {
+          if (c === stringChar && prev !== '\\') {
+            inString = false;
+          }
+          continue;
+        }
+
+        if (c === '"' || c === "'") {
+          inString = true;
+          stringChar = c;
+          continue;
+        }
+
+        if (c === '{') {
+          depth++;
+        } else if (c === '}') {
+          if (depth > 0) depth--;
+        } else if (c === '>' && depth === 0) {
+          end = m;
+          break;
+        }
+      }
+
+      if (end === -1) {
+        // Malformed / unterminated — skip past `<` only.
+        out += ch;
+        i++;
+        continue;
+      }
+
+      // Drop the entire tag [i .. end].
+      i = end + 1;
+    }
+
+    return out;
+  }
+
+  /**
+   * Strip all MDX constructs from content using AST-based parsing for maximum
+   * reliability. Handles:
+   * - `mdxjsEsm`: module-level `export`/`import` declarations
+   * - `mdxJsxFlowElement`/`mdxJsxTextElement`: JSX components
+   *   - Known components are transformed (Info→blockquote, Step→header, etc.)
+   *   - Unknown PascalCase components have tags stripped, children preserved
+   *   - HTML elements (lowercase) are preserved
+   * - `mdxFlowExpression`/`mdxTextExpression`: `{expression}` blocks
+   *
+   * Falls back to regex-based stripping if AST parsing fails.
+   *
+   * @param {string} content
+   * @returns {string}
+   * @private
+   */
+  _stripMdxWithAst(content) {
+    if (!content) return content;
+
+    try {
+      const tree = fromMarkdown(content, {
+        extensions: [mdxjs()],
+        mdastExtensions: [mdxFromMarkdown()],
+      });
+
+      const edits = [];
+
+      const getAttr = (node, attrName) => {
+        const attr = node.attributes?.find((a) => a.name === attrName);
+        if (!attr) return '';
+        return typeof attr.value === 'string' ? attr.value : '';
+      };
+
+      const collectEdits = (node) => {
+        if (node.type === 'mdxjsEsm') {
+          edits.push([node.position.start.offset, node.position.end.offset, '']);
+          return;
+        }
+
+        if (node.type === 'mdxFlowExpression' || node.type === 'mdxTextExpression') {
+          edits.push([node.position.start.offset, node.position.end.offset, '']);
+          return;
+        }
+
+        if (node.type === 'mdxJsxFlowElement' || node.type === 'mdxJsxTextElement') {
+          const name = node.name;
+          const start = node.position.start.offset;
+          const end = node.position.end.offset;
+
+          // Lowercase/null → HTML element, recurse into children only
+          if (!name || name[0] < 'A' || name[0] > 'Z') {
+            if (node.children) node.children.forEach(collectEdits);
+            return;
+          }
+
+          // Extract and recursively process inner content
+          let innerContent = '';
+          if (node.children?.length > 0) {
+            const innerStart = node.children[0].position.start.offset;
+            const innerEnd = node.children[node.children.length - 1].position.end.offset;
+            innerContent = content.slice(innerStart, innerEnd);
+            innerContent = this._stripMdxWithAst(innerContent);
+          }
+
+          let replacement;
+          switch (name) {
+            case 'Steps':
+            case 'Tabs':
+            case 'AccordionGroup':
+              replacement = innerContent;
+              break;
+            case 'Step': {
+              const title = getAttr(node, 'title');
+              replacement = title ? `\n### ${title}\n\n${innerContent}\n` : `\n${innerContent}\n`;
+              break;
+            }
+            case 'Tab': {
+              const title = getAttr(node, 'title');
+              replacement = title ? `\n#### ${title}\n\n${innerContent}\n` : `\n${innerContent}\n`;
+              break;
+            }
+            case 'Accordion': {
+              const title = getAttr(node, 'title');
+              replacement = title ? `\n#### ${title}\n\n${innerContent}\n` : `\n${innerContent}\n`;
+              break;
+            }
+            case 'Info':
+            case 'Tip':
+            case 'Warning':
+            case 'Note': {
+              const label = name === 'Tip' ? 'Tip' : name === 'Warning' ? 'Warning' : 'Note';
+              replacement = this._contentToBlockquote(innerContent, label);
+              break;
+            }
+            default:
+              replacement = innerContent;
+              break;
+          }
+
+          edits.push([start, end, replacement]);
+          return;
+        }
+
+        // For all other node types, recurse into children
+        if (node.children) node.children.forEach(collectEdits);
+      };
+
+      collectEdits(tree);
+
+      // Sort by start offset descending, apply from end to start
+      edits.sort((a, b) => b[0] - a[0]);
+
+      let result = content;
+      for (const [s, e, replacement] of edits) {
+        result = result.slice(0, s) + replacement + result.slice(e);
+      }
+
+      return result;
+    } catch (error) {
+      this.logger?.warn?.('MDX AST parse failed, falling back to regex', {
+        error: error.message,
+      });
+      return this._stripMdxWithRegex(content);
+    }
+  }
+
+  /**
+   * Regex/scanner fallback for MDX stripping when AST parsing fails.
+   * Combines module declaration stripping, named component transforms,
+   * and PascalCase JSX tag stripping.
+   *
+   * @param {string} content
+   * @returns {string}
+   * @private
+   */
+  _stripMdxWithRegex(content) {
+    if (!content) return content;
+
+    let result = this._stripMdxModuleDeclarations(content);
+
+    result = result.replace(/<\/?Steps>/g, '');
+    result = result.replace(/<Step[^>]*title="([^"]+)"[^>]*>/g, '\n### $1\n');
+    result = result.replace(/<\/Step>/g, '\n');
+    result = result.replace(/<\/?Tabs>/g, '');
+    result = result.replace(/<Tab[^>]*title="([^"]+)"[^>]*>/g, '\n#### $1\n');
+    result = result.replace(/<\/Tab>/g, '\n');
+    result = result.replace(/<\/?AccordionGroup>/g, '');
+    result = result.replace(/<Accordion[^>]*title="([^"]+)"[^>]*>/g, '\n#### $1\n');
+    result = result.replace(/<\/Accordion>/g, '\n');
+    result = result.replace(
+      /<(Info|Tip|Warning|Note)>([\s\S]*?)<\/\1>/g,
+      (_match, tag, innerContent) => {
+        const label = tag === 'Tip' ? 'Tip' : tag === 'Warning' ? 'Warning' : 'Note';
+        return this._contentToBlockquote(innerContent, label);
+      }
+    );
+
+    result = this._stripPascalCaseJsxTags(result);
+
+    return result;
+  }
+
+  /**
+   * Convert text content to a markdown blockquote with a label.
+   *
+   * @param {string} innerContent
+   * @param {string} label
+   * @returns {string}
+   * @private
+   */
+  _contentToBlockquote(innerContent, label) {
+    if (!innerContent?.trim()) return '';
+
+    const lines = innerContent.split('\n');
+    const quotedLines = [];
+    let firstContent = true;
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      if (firstContent) {
+        quotedLines.push(`> **${label}:** ${trimmed}`);
+        firstContent = false;
+      } else {
+        quotedLines.push(`> ${trimmed}`);
+      }
+    }
+    return '\n' + quotedLines.join('\n') + '\n';
+  }
+
+  /**
    * 清理 Markdown 内容，修复 Pandoc 不支持的语法
    * @param {string} content
    * @returns {string}
@@ -159,68 +543,14 @@ export class PandocPdfService {
   _cleanMarkdownContent(content) {
     if (!content) return content;
 
+    // 00. Strip all MDX constructs (module-level JS, JSX components, expressions)
+    // using AST-based approach with regex fallback.
+    let cleaned = this._stripMdxWithAst(content);
+
     // 1. 修复代码块中的 theme={...} 属性
     // ```markdown theme={null} -> ```markdown
     // 支持任意数量的反引号 (>=3)
-    let cleaned = content.replace(/^(`{3,})(\w+)\s+theme=\{[^}]+\}/gm, '$1$2');
-
-    // 0. 处理 MDX/JSX 自定义组件
-
-    // <Steps> / </Steps> -> remove
-    cleaned = cleaned.replace(/<\/?Steps>/g, '');
-
-    // <Step title="..."> -> ### ...
-    cleaned = cleaned.replace(/<Step[^>]*title="([^"]+)"[^>]*>/g, '\n### $1\n');
-
-    // </Step> -> remove
-    cleaned = cleaned.replace(/<\/Step>/g, '\n');
-
-    // <Tabs> / </Tabs> -> remove (keep content of all tabs)
-    cleaned = cleaned.replace(/<\/?Tabs>/g, '');
-
-    // <Tab title="..."> -> #### ... (use H4 for tab titles)
-    cleaned = cleaned.replace(/<Tab[^>]*title="([^"]+)"[^>]*>/g, '\n#### $1\n');
-
-    // </Tab> -> remove
-    cleaned = cleaned.replace(/<\/Tab>/g, '\n');
-
-    // <AccordionGroup> / </AccordionGroup> -> remove
-    cleaned = cleaned.replace(/<\/?AccordionGroup>/g, '');
-
-    // <Accordion title="..." ...> -> #### ...
-    cleaned = cleaned.replace(/<Accordion[^>]*title="([^"]+)"[^>]*>/g, '\n#### $1\n');
-
-    // </Accordion> -> remove
-    cleaned = cleaned.replace(/<\/Accordion>/g, '\n');
-
-    // <Info|Tip|Warning|Note> -> blockquote with marker
-    // Convert the entire block content so every inner line gets the `> ` prefix.
-    // This prevents orphaned list items outside the blockquote that break LaTeX.
-    cleaned = cleaned.replace(
-      /<(Info|Tip|Warning|Note)>([\s\S]*?)<\/\1>/g,
-      (_match, tag, innerContent) => {
-        const label = tag === 'Tip' ? 'Tip' : tag === 'Warning' ? 'Warning' : 'Note';
-        const lines = innerContent.split('\n');
-        const quotedLines = [];
-        let firstContent = true;
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed) continue; // skip blank lines inside the component
-          if (firstContent) {
-            quotedLines.push(`> **${label}:** ${trimmed}`);
-            firstContent = false;
-          } else {
-            quotedLines.push(`> ${trimmed}`);
-          }
-        }
-        return '\n' + quotedLines.join('\n') + '\n';
-      }
-    );
-
-    // Remove any remaining JSX/MDX component tags (PascalCase = JSX convention)
-    // Strips only the tags, inner content is preserved
-    // e.g. <Frame><img .../></Frame> -> <img .../>
-    cleaned = cleaned.replace(/<\/?[A-Z][A-Za-z]*(?:\s[^>]*)?\/?>/g, '');
+    cleaned = cleaned.replace(/^(`{3,})(\w+)\s+theme=\{[^}]+\}/gm, '$1$2');
 
     // 0.1 修复缩进
     // 移除 2-4 个空格的缩进 (修复 <Step> 内容被识别为代码块的问题)

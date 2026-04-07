@@ -279,12 +279,201 @@ describe('PandocPdfService', () => {
       expect(result).toBe('> Some text\n>\n> - item 1');
     });
 
+    it('should strip multi-line MDX export const declarations', () => {
+      const input = [
+        '# Quickstart',
+        '',
+        'export const InstallConfigurator = () => {',
+        "  const TERM = { mac: 'curl -fsSL https://claude.ai/install.sh | bash' };",
+        '  return <div>stuff</div>;',
+        '};',
+        '',
+        '## Step 1',
+        'Real content.',
+      ].join('\n');
+      const result = service._cleanMarkdownContent(input);
+      expect(result).not.toContain('export const InstallConfigurator');
+      expect(result).not.toContain('const TERM');
+      expect(result).toContain('# Quickstart');
+      expect(result).toContain('## Step 1');
+      expect(result).toContain('Real content.');
+    });
+
+    it('should strip MDX export that uses template literals with backticks', () => {
+      // Reproduces the quickstart.md Experiment helper shape that triggered
+      // the CI LaTeX error: backtick template literals confused pandoc into
+      // opening math mode inside escaped prose.
+      const input = [
+        'prefix text',
+        '',
+        'export const Experiment = ({flag, treatment, children}) => {',
+        '  const ajsMatch = document.cookie.match(/(?:^|; )ajs=([^;]+)/);',
+        '  const vid = decodeURIComponent(ajsMatch[1]).replace(/^"|"$/g, "");',
+        '  document.cookie = `ajs=${vid}; domain=.claude.com`;',
+        '  return treatment;',
+        '};',
+        '',
+        'suffix text',
+      ].join('\n');
+      const result = service._cleanMarkdownContent(input);
+      expect(result).not.toContain('export const Experiment');
+      expect(result).not.toContain('document.cookie');
+      expect(result).toContain('prefix text');
+      expect(result).toContain('suffix text');
+    });
+
+    it('should strip JSX tag whose attribute value is a nested JSX element', () => {
+      // Regression: `<Experiment treatment={<InstallConfigurator />} />`
+      // A naive `<[A-Z]...[^>]*>` stops at the inner `/>` and leaves
+      // `} />` behind as prose. The brace-aware scanner must drop the
+      // whole outer tag.
+      const input = [
+        'before',
+        '',
+        '<Experiment flag="quickstart-install-configurator" treatment={<InstallConfigurator />} />',
+        '',
+        'after',
+      ].join('\n');
+      const result = service._cleanMarkdownContent(input);
+      expect(result).not.toContain('Experiment');
+      expect(result).not.toContain('InstallConfigurator');
+      expect(result).not.toContain('} />');
+      expect(result).not.toContain('/>');
+      expect(result).toContain('before');
+      expect(result).toContain('after');
+    });
+
+    it('should strip JSX tag with multiple nested JSX attribute values', () => {
+      const input =
+        '<Card icon={<Icon name="book" />} action={<Button label="Go" />}>Content</Card>';
+      const result = service._cleanMarkdownContent(input);
+      expect(result).not.toContain('<Card');
+      expect(result).not.toContain('</Card');
+      expect(result).not.toContain('<Icon');
+      expect(result).not.toContain('<Button');
+      expect(result).toContain('Content');
+    });
+
+    it('should strip MDX export containing embedded CSS template literal', () => {
+      // Regression: CSS inside a JS template literal has bare `}` at column 0
+      // (end of each CSS rule). Earlier regex stopped at the first such `}`
+      // and left the rest of the CSS leaking into the PDF. The real closer is
+      // always `};` with a semicolon.
+      const input = [
+        '# Quickstart',
+        '',
+        'export const InstallConfigurator = () => {',
+        '  const STYLES = `',
+        '.cc-ic {',
+        '  --ic-slate: #141413;',
+        '  font-size: 14px;',
+        '}',
+        '.dark .cc-ic {',
+        '  --ic-slate: #f0eee6;',
+        '}',
+        '.cc-ic-tab-strip {',
+        '  display: inline-flex;',
+        '}',
+        '`;',
+        '  return <div className="cc-ic">hi</div>;',
+        '};',
+        '',
+        '## Step 1',
+        'Body.',
+      ].join('\n');
+      const result = service._cleanMarkdownContent(input);
+      expect(result).not.toContain('cc-ic');
+      expect(result).not.toContain('--ic-slate');
+      expect(result).not.toContain('inline-flex');
+      expect(result).not.toContain('export const InstallConfigurator');
+      expect(result).toContain('# Quickstart');
+      expect(result).toContain('## Step 1');
+      expect(result).toContain('Body.');
+    });
+
+    it('should strip multiple consecutive MDX export blocks', () => {
+      const input = [
+        'export const A = () => {',
+        '  return 1;',
+        '};',
+        '',
+        'export const B = () => {',
+        '  return 2;',
+        '};',
+        '',
+        '# Real title',
+      ].join('\n');
+      const result = service._cleanMarkdownContent(input);
+      expect(result).not.toContain('export const A');
+      expect(result).not.toContain('export const B');
+      expect(result).toContain('# Real title');
+    });
+
+    it('should preserve export/import lines inside fenced code blocks', () => {
+      // Python example containing `import`, and shell `export VAR=...` must
+      // survive because they are inside fenced code blocks.
+      const input = [
+        '# Example',
+        '',
+        '```python',
+        'import json',
+        'import sys',
+        'print(json.dumps({"ok": True}))',
+        '```',
+        '',
+        '```bash',
+        'export MAX_TOKENS=50000',
+        'claude',
+        '```',
+      ].join('\n');
+      const result = service._cleanMarkdownContent(input);
+      expect(result).toContain('import json');
+      expect(result).toContain('import sys');
+      expect(result).toContain('export MAX_TOKENS=50000');
+    });
+
+    it('should strip top-level MDX import statements', () => {
+      const input = [
+        "import Foo from '@site/components/Foo';",
+        'import Bar from "./Bar";',
+        '',
+        '# Page title',
+        'body',
+      ].join('\n');
+      const result = service._cleanMarkdownContent(input);
+      expect(result).not.toMatch(/^import\s/m);
+      expect(result).toContain('# Page title');
+      expect(result).toContain('body');
+    });
+
     it('should handle mixed backtick lengths correctly', () => {
       const input =
         '````markdown theme={null}\n' + '```bash\n' + 'echo "hello"\n' + '```\n' + '````';
       const expected = '````markdown\n' + '```bash\n' + 'echo "hello"\n' + '```\n' + '````';
       const result = service._cleanMarkdownContent(input);
       expect(result).toBe(expected);
+    });
+
+    it('should preserve nested code fences when outer uses more backticks (regex fallback)', () => {
+      // Regression: the regex fence splitter must match closing delimiter to
+      // the opener's character AND length. A 3-backtick line inside a
+      // 4-backtick block must NOT end the protected region.
+      const input = [
+        '````markdown',
+        'export const SHOULD_SURVIVE = true;',
+        '```bash',
+        'export VAR=1',
+        '```',
+        '````',
+        '',
+        "import Leak from './leak';",
+      ].join('\n');
+      const result = service._stripMdxModuleDeclarations(input);
+      // The export inside the 4-backtick block must survive
+      expect(result).toContain('export const SHOULD_SURVIVE = true;');
+      expect(result).toContain('export VAR=1');
+      // The import outside the fence must be stripped
+      expect(result).not.toMatch(/^import Leak/m);
     });
   });
 
