@@ -23,8 +23,8 @@
         "finalPdfDirectory": "finalPdf-cloudflare"
     },
     "translation": {
-        "enabled": true,
-        "bilingual": true,
+        "enabled": false,
+        "bilingual": false,
         "targetLanguage": "Simplified Chinese (简体中文)",
         "concurrency": 2
     }

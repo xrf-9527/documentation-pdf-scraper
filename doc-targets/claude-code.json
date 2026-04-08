@@ -34,7 +34,7 @@
   "targetUrls": [],
   "translation": {
     "enabled": false,
-    "bilingual": true,
+    "bilingual": false,
     "targetLanguage": "Simplified Chinese (简体中文)",
     "concurrency": 2
   }
