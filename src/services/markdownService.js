@@ -22,6 +22,14 @@ export class MarkdownService {
 
     this.turndown = new TurndownService(turndownOptions);
 
+    // 剥离非正文且可能污染 LaTeX 的元素。
+    // 背景：某些站点（例如 developers.openai.com 的 Next.js 构建）会把
+    // 压缩后的 JavaScript 直接嵌入正文容器内的 <script> 标签，其中裸露的
+    // `&` 字符会让 Pandoc → XeLaTeX 以 `Misplaced alignment tab character &.`
+    // 报错并中止 PDF 生成。CSS 字面量同理。统一在此剥离，使 Markdown 工作流
+    // 无需依赖 pdfStyleService（后者仅在 enablePDFStyleProcessing=true 时生效）。
+    this.turndown.remove(['script', 'noscript', 'style', 'template']);
+
     // 使用 `*text*` 而不是 `_text_` 来表示 HTML <em>/<i> 强调，
     // 这样生成的 Markdown 更符合 Pandoc / CommonMark 对“词内部强调优先使用 *”的最佳实践，
     // 避免在中英文混排场景下由下划线强调带来的歧义。

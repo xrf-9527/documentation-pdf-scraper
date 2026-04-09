@@ -74,6 +74,30 @@ describe('MarkdownService', () => {
     expect(duplicateItalic).toBe(false);
   });
 
+  test('convertHtmlToMarkdown 应该剥离 <script>/<style>/<noscript> 内容', () => {
+    // Regression: OpenAI 文档页面的 Next.js 构建会在正文 DOM 中嵌入 <script>，
+    // 其压缩后的 JS 含有裸露 `&` 字符，会让 Pandoc/XeLaTeX 以
+    // `Misplaced alignment tab character &.` 报错并中止 PDF 生成。
+    // 这里确保 script/style/noscript 的内容完全不进入 Markdown。
+    const service = new MarkdownService({ logger });
+    const html = [
+      '<p>Before</p>',
+      '<script>window._(HY||(e=>{let t=e=>e&1;}));</script>',
+      '<style>.foo { color: red; }</style>',
+      '<noscript>Please enable JS</noscript>',
+      '<p>After</p>',
+    ].join('');
+
+    const markdown = service.convertHtmlToMarkdown(html);
+
+    expect(markdown).toContain('Before');
+    expect(markdown).toContain('After');
+    expect(markdown).not.toContain('window._');
+    expect(markdown).not.toContain('window.\\_');
+    expect(markdown).not.toContain('color: red');
+    expect(markdown).not.toContain('Please enable JS');
+  });
+
   test('代码块应保留语言标识', () => {
     const service = new MarkdownService({ logger });
     const html = '<pre><code class="language-js">const x = 1;</code></pre>';
