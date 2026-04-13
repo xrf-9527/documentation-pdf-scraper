@@ -114,7 +114,7 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
       - name: Upload PDF artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pdf-${{ inputs.doc_target }}
           path: ${{ steps.find-pdf.outputs.path }}
