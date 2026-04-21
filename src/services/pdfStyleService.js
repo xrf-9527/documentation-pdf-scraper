@@ -719,6 +719,9 @@ export class PDFStyleService {
             '[data-theme-toggle]',
             '.copy-page',
             '[data-action="copy-page"]',
+            '.page-copy-action',
+            '[data-page-copy-action]',
+            '[data-codex-screenshot-overlay]',
           ];
 
           // 添加配置的移除选择器
@@ -1155,7 +1158,9 @@ export class PDFStyleService {
           'astro-island[component-url*="PageActions"]',
           '[data-page-actions]',
           '.copy-page, [data-action="copy-page"]',
+          '.page-copy-action, [data-page-copy-action]',
           '[data-anchor-id]',
+          '[data-codex-screenshot-overlay]',
         ];
         selectorsToHide.forEach((sel) => {
           document.querySelectorAll(sel).forEach((el) => {

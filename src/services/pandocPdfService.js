@@ -1,5 +1,6 @@
 // src/services/pandocPdfService.js
 import { spawn } from 'child_process';
+import { createHash } from 'crypto';
 import path from 'path';
 import fs from 'fs';
 import { fromMarkdown } from 'mdast-util-from-markdown';
@@ -73,8 +74,9 @@ export class PandocPdfService {
 
       // 清理 Markdown 内容（修复代码块语法问题）
       const cleanedContent = this._cleanMarkdownContent(markdownContent);
+      const preparedContent = await this._preparePdfImages(cleanedContent, tempDir);
 
-      fs.writeFileSync(tempFile, cleanedContent, 'utf8');
+      fs.writeFileSync(tempFile, preparedContent.content, 'utf8');
 
       try {
         await this._runPandoc(tempFile, outputPath, options);
@@ -84,6 +86,16 @@ export class PandocPdfService {
           fs.unlinkSync(tempFile);
         } catch {
           // 忽略清理错误
+        }
+
+        if (preparedContent.cleanupPaths.length > 0) {
+          preparedContent.cleanupPaths.forEach((cleanupPath) => {
+            try {
+              fs.rmSync(cleanupPath, { recursive: true, force: true });
+            } catch {
+              // 忽略清理错误
+            }
+          });
         }
       }
 
@@ -536,7 +548,7 @@ export class PandocPdfService {
 
   /**
    * 检查图片 URL 是否是 XeLaTeX/Pandoc 不稳定的格式。
-   * 目前重点处理 webp/avif；如果 URL 已显式请求 png/jpg/jpeg，则认为安全。
+   * XeLaTeX 原生更适合 png/jpg/pdf；webp/avif/gif/svg 需要额外处理。
    *
    * @param {string} url
    * @returns {boolean}
@@ -552,7 +564,11 @@ export class PandocPdfService {
       return false;
     }
 
-    return /\.(?:webp|avif)(?:$|[?#])/i.test(lower);
+    if (/\.(?:png|jpe?g|pdf)(?:$|[?#])/i.test(lower)) {
+      return false;
+    }
+
+    return /\.(?:webp|avif|gif|svg)(?:$|[?#])/i.test(lower);
   }
 
   /**
@@ -594,6 +610,266 @@ export class PandocPdfService {
     );
 
     return downgraded;
+  }
+
+  /**
+   * 将 Markdown 中仍不适合 XeLaTeX 直接处理的图片优先转换为本地 PNG；
+   * 如果转换失败，则回退为普通超链接以避免整个 PDF 生成失败。
+   *
+   * @param {string} content
+   * @param {string} tempRootDir
+   * @returns {Promise<{content: string, cleanupPaths: string[]}>}
+   * @private
+   */
+  async _preparePdfImages(content, tempRootDir) {
+    if (!content) {
+      return { content, cleanupPaths: [] };
+    }
+
+    const urls = this._extractPdfUnsafeImageUrls(content);
+    if (urls.length === 0) {
+      return { content, cleanupPaths: [] };
+    }
+
+    const mediaDir = path.join(tempRootDir, `media-${Date.now()}`);
+    const resolvedUrls = new Map();
+    const cleanupPaths = [mediaDir];
+
+    for (const url of urls) {
+      try {
+        const localPath = await this._materializePdfSafeImage(url, mediaDir);
+        resolvedUrls.set(url, localPath);
+      } catch (error) {
+        this.logger?.warn?.('图片转换失败，将降级为普通链接', {
+          url,
+          error: error.message,
+        });
+        resolvedUrls.set(url, null);
+      }
+    }
+
+    let prepared = content;
+
+    prepared = prepared.replace(
+      /!\[([^\]]*)\]\((<)?([^)\n>]+)(>)?((?:\s+["'][^"']*["'])?\s*)\)/g,
+      (match, altText = '', openBracket = '', url, closeBracket = '') => {
+        if (!this._isRemoteImageUrl(url)) {
+          return match;
+        }
+
+        const localPath = resolvedUrls.get(url);
+        if (localPath) {
+          return `![${altText}](${localPath})`;
+        }
+
+        const label = altText.trim() || 'Image';
+        return `[${label}](${openBracket}${url}${closeBracket})`;
+      }
+    );
+
+    prepared = prepared.replace(
+      /<img\b([^>]*?)src=(["'])([^"']+)\2([^>]*)>/gi,
+      (match, before, _quote, src, after) => {
+        if (!this._isRemoteImageUrl(src)) {
+          return match;
+        }
+
+        const localPath = resolvedUrls.get(src);
+        const attrs = `${before} ${after}`;
+        const altMatch = attrs.match(/\balt=(["'])(.*?)\1/i);
+        const label = altMatch?.[2]?.trim() || 'Image';
+
+        if (localPath) {
+          return `![${label}](${localPath})`;
+        }
+
+        return `[${label}](${src})`;
+      }
+    );
+
+    return { content: prepared, cleanupPaths };
+  }
+
+  /**
+   * 提取内容中所有需要额外转换的图片 URL。
+   *
+   * @param {string} content
+   * @returns {string[]}
+   * @private
+   */
+  _extractPdfUnsafeImageUrls(content) {
+    if (!content) return [];
+
+    const urls = new Set();
+
+    for (const match of content.matchAll(/!\[[^\]]*]\((<)?([^)\n>]+)(>)?((?:\s+["'][^"']*["'])?\s*)\)/g)) {
+      const url = match[2];
+      if (this._isRemoteImageUrl(url)) {
+        urls.add(url);
+      }
+    }
+
+    for (const match of content.matchAll(/<img\b[^>]*?\bsrc=(["'])([^"']+)\1[^>]*>/gi)) {
+      const url = match[2];
+      if (this._isRemoteImageUrl(url)) {
+        urls.add(url);
+      }
+    }
+
+    return Array.from(urls);
+  }
+
+  /**
+   * 下载并转换远程图片为本地 PNG，供 Pandoc/XeLaTeX 稳定读取。
+   *
+   * @param {string} url
+   * @param {string} mediaDir
+   * @returns {Promise<string|null>}
+   * @private
+   */
+  async _materializePdfSafeImage(url, mediaDir) {
+    if (!url || !/^https?:\/\//i.test(url)) {
+      return null;
+    }
+
+    fs.mkdirSync(mediaDir, { recursive: true });
+
+    const digest = createHash('sha256').update(url).digest('hex').slice(0, 24);
+    const response = await fetch(url, {
+      headers: {
+        'user-agent': 'documentation-pdf-scraper/1.0',
+      },
+      signal: AbortSignal.timeout(30000),
+    });
+
+    if (!response.ok) {
+      throw new Error(`下载失败: HTTP ${response.status}`);
+    }
+
+    const contentType = response.headers.get('content-type') || '';
+    const sourceExtension = this._getImageExtensionFromUrl(url, contentType);
+    const sourcePath = path.join(mediaDir, `${digest}${sourceExtension}`);
+    const outputPath = path.join(mediaDir, `${digest}.png`);
+
+    if (fs.existsSync(outputPath)) {
+      return outputPath;
+    }
+    if (fs.existsSync(sourcePath) && !this._shouldConvertDownloadedImage(url, contentType)) {
+      return sourcePath;
+    }
+
+    const buffer = Buffer.from(await response.arrayBuffer());
+    await fs.promises.writeFile(sourcePath, buffer);
+
+    if (!this._shouldConvertDownloadedImage(url, contentType)) {
+      return sourcePath;
+    }
+
+    await this._convertImageToPng(sourcePath, outputPath);
+    return outputPath;
+  }
+
+  /**
+   * 判断是否为远程图片 URL。
+   *
+   * @param {string} url
+   * @returns {boolean}
+   * @private
+   */
+  _isRemoteImageUrl(url) {
+    return typeof url === 'string' && /^https?:\/\//i.test(url.trim());
+  }
+
+  /**
+   * 判断下载后的图片是否需要转为 PNG 才能稳定进入 XeLaTeX。
+   *
+   * @param {string} url
+   * @param {string} contentType
+   * @returns {boolean}
+   * @private
+   */
+  _shouldConvertDownloadedImage(url, contentType = '') {
+    const normalizedType = contentType.toLowerCase();
+
+    if (normalizedType.includes('image/png') || normalizedType.includes('image/jpeg')) {
+      return false;
+    }
+
+    if (normalizedType.includes('application/pdf')) {
+      return false;
+    }
+
+    if (normalizedType.includes('image/webp')) return true;
+    if (normalizedType.includes('image/avif')) return true;
+    if (normalizedType.includes('image/gif')) return true;
+    if (normalizedType.includes('image/svg+xml')) return true;
+
+    return this._isPdfUnsafeImageUrl(url);
+  }
+
+  /**
+   * 使用项目自带 Python 运行时把图片转换为 PNG。
+   *
+   * @param {string} inputPath
+   * @param {string} outputPath
+   * @returns {Promise<void>}
+   * @private
+   */
+  async _convertImageToPng(inputPath, outputPath) {
+    const pythonExecutable = this.config.python?.executable || 'python3';
+    const scriptPath = path.join(process.cwd(), 'src/python/convert_image.py');
+
+    await new Promise((resolve, reject) => {
+      const child = spawn(pythonExecutable, [scriptPath, inputPath, outputPath]);
+      let stderr = '';
+
+      child.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      child.on('close', (code) => {
+        if (code !== 0) {
+          reject(new Error(stderr.trim() || `image conversion exited with code ${code}`));
+          return;
+        }
+
+        resolve();
+      });
+
+      child.on('error', (error) => {
+        reject(error);
+      });
+    });
+  }
+
+  /**
+   * 从 URL 推断文件扩展名；推断失败时保底使用 .img。
+   *
+   * @param {string} url
+   * @returns {string}
+   * @private
+   */
+  _getImageExtensionFromUrl(url, contentType = '') {
+    const normalizedType = contentType.toLowerCase();
+    if (normalizedType.includes('image/png')) return '.png';
+    if (normalizedType.includes('image/jpeg')) return '.jpg';
+    if (normalizedType.includes('image/webp')) return '.webp';
+    if (normalizedType.includes('image/avif')) return '.avif';
+    if (normalizedType.includes('image/gif')) return '.gif';
+    if (normalizedType.includes('image/svg+xml')) return '.svg';
+    if (normalizedType.includes('application/pdf')) return '.pdf';
+
+    if (!url || typeof url !== 'string') {
+      return '.img';
+    }
+
+    try {
+      const pathname = new URL(url).pathname || '';
+      const extension = path.extname(pathname);
+      return extension || '.img';
+    } catch {
+      return '.img';
+    }
   }
 
   /**
@@ -716,9 +992,6 @@ export class PandocPdfService {
     // 5. 将图片 URL 中的 fm=webp 替换为 fm=png（LaTeX 不支持 webp 格式）
     cleaned = cleaned.replace(/fm=webp/g, 'fm=png');
 
-    // 6. 对仍然是 PDF 不安全格式的图片做降级，避免 Pandoc/XeLaTeX 直接失败。
-    cleaned = this._downgradePdfUnsafeImages(cleaned);
-
     return cleaned;
   }
 
@@ -747,7 +1020,7 @@ export class PandocPdfService {
       '--variable',
       'geometry:margin=1in', // 页边距
       '--variable',
-      'header-includes=\\usepackage{fvextra} \\DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines,breakanywhere,commandchars=\\\\\\{\\}} \\usepackage{xurl}', // 启用代码换行(支持任意位置) 和 URL 换行。不再使用 ltablex 防止表格溢出
+      'header-includes=\\usepackage{fvextra} \\DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines,breakanywhere,fontsize=\\\\small,commandchars=\\\\\\{\\}} \\usepackage{xurl}', // 启用代码换行(支持任意位置)、缩小代码字号并增强 URL 换行。不再使用 ltablex 防止表格溢出
     ];
 
     // 添加其他选项
@@ -847,7 +1120,8 @@ export class PandocPdfService {
       }
 
       const tempFile = path.join(tempDir, `batch_${Date.now()}.md`);
-      fs.writeFileSync(tempFile, cleanedContent, 'utf8');
+      const preparedContent = await this._preparePdfImages(cleanedContent, tempDir);
+      fs.writeFileSync(tempFile, preparedContent.content, 'utf8');
 
       // Ensure output directory exists
       const outputDir = path.dirname(outputPath);
@@ -878,6 +1152,16 @@ export class PandocPdfService {
           fs.unlinkSync(tempFile);
         } catch {
           // Ignore cleanup errors
+        }
+
+        if (preparedContent.cleanupPaths.length > 0) {
+          preparedContent.cleanupPaths.forEach((cleanupPath) => {
+            try {
+              fs.rmSync(cleanupPath, { recursive: true, force: true });
+            } catch {
+              // Ignore cleanup errors
+            }
+          });
         }
       }
     } catch (error) {

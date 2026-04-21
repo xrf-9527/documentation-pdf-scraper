@@ -285,7 +285,8 @@ export class MarkdownService {
     try {
       const rawMarkdown = this.turndown.turndown(html);
       const normalizedMarkdown = this.normalizeResourceUrls(rawMarkdown, options.pageUrl);
-      const markdown = this._normalizeFigureCaptions(normalizedMarkdown);
+      const dedupedMarkdown = this._normalizeFigureCaptions(normalizedMarkdown);
+      const markdown = this.sanitizeMarkdown(dedupedMarkdown, options);
       this.logger?.debug?.('HTML 转 Markdown 完成', {
         length: markdown.length,
         ...options.debugMeta,
@@ -306,13 +307,137 @@ export class MarkdownService {
    */
   async extractAndConvertPage(page, selector) {
     const pageUrl = typeof page.url === 'function' ? page.url() : undefined;
-    const { html, svgCount } = await page.evaluate((contentSelector) => {
+    const { html, svgCount } = await page.evaluate((contentSelector, currentPageUrl) => {
       const container = document.querySelector(contentSelector);
       if (!container) {
         return { html: '', svgCount: 0 };
       }
 
       const clone = container.cloneNode(true);
+      const normalizeWhitespace = (text = '') => text.replace(/\s+/g, ' ').trim();
+      const isOpenAiDocsPage = (() => {
+        if (!currentPageUrl) return false;
+        try {
+          return new URL(currentPageUrl).hostname === 'developers.openai.com';
+        } catch {
+          return false;
+        }
+      })();
+
+      const getVisibleText = (element) => {
+        const textClone = element.cloneNode(true);
+        textClone
+          .querySelectorAll(
+            'script, style, noscript, template, img, svg, [aria-hidden="true"], [aria-live], .sr-only, [hidden]'
+          )
+          .forEach((node) => node.remove());
+
+        return normalizeWhitespace(textClone.textContent || '');
+      };
+
+      if (isOpenAiDocsPage) {
+        clone
+          .querySelectorAll(
+            'script, noscript, style, template, [data-page-copy-action], .page-copy-action, [data-anchor-id], [data-codex-screenshot-overlay]'
+          )
+          .forEach((node) => node.remove());
+
+        clone.querySelectorAll('nav').forEach((nav) => {
+          const text = normalizeWhitespace(nav.textContent || '');
+          if (/\bPrevious\b/.test(text) && /\bNext\b/.test(text)) {
+            nav.remove();
+          }
+        });
+
+        const normalizePanelLabel = (label) => {
+          if (!label) return '';
+
+          const lower = label.toLowerCase();
+          if (lower === 'app') return 'App (Recommended)';
+          if (lower === 'ide') return 'IDE extension';
+          if (lower === 'cli') return 'CLI';
+          if (lower === 'cloud') return 'Cloud';
+
+          return label;
+        };
+
+        clone.querySelectorAll('[role="tablist"]').forEach((tabList) => tabList.remove());
+
+        const tabPanels = Array.from(clone.querySelectorAll('[data-panel][role="region"], [role="tabpanel"]'));
+        if (tabPanels.length > 1) {
+          tabPanels.forEach((panel) => {
+            panel.removeAttribute('hidden');
+            panel.setAttribute('aria-hidden', 'false');
+
+            const label = normalizePanelLabel(
+              normalizeWhitespace(panel.getAttribute('aria-label') || panel.getAttribute('data-panel') || '')
+            );
+
+            if (!label || !panel.parentNode) {
+              return;
+            }
+
+            const previousElement = panel.previousElementSibling;
+            if (
+              previousElement &&
+              /^H[1-6]$/.test(previousElement.tagName) &&
+              normalizeWhitespace(previousElement.textContent || '') === label
+            ) {
+              return;
+            }
+
+            const heading = document.createElement('h3');
+            heading.textContent = label;
+            panel.parentNode.insertBefore(heading, panel);
+          });
+        }
+
+        clone.querySelectorAll('[data-codex-screenshot-root]').forEach((root) => {
+          const inlineImage =
+            root.querySelector('img[data-codex-screenshot-inline-image]') ||
+            Array.from(root.querySelectorAll('img')).find(
+              (image) => !image.closest('[data-codex-screenshot-overlay]')
+            );
+
+          if (!inlineImage) {
+            root.remove();
+            return;
+          }
+
+          const figure = document.createElement('figure');
+          const imageClone = inlineImage.cloneNode(true);
+          imageClone.removeAttribute('style');
+          imageClone.removeAttribute('class');
+          figure.appendChild(imageClone);
+          root.replaceWith(figure);
+        });
+
+        clone.querySelectorAll('button').forEach((button) => {
+          const label = button.getAttribute('aria-label') || '';
+          const text = getVisibleText(button);
+          const copiedBadge = Array.from(button.querySelectorAll('[aria-hidden="true"]')).some((node) =>
+            /copied/i.test(node.textContent || '')
+          );
+          const hasExampleIcon = !!button.querySelector('img[src*="/codex/colorcons/"]');
+
+          if (copiedBadge || hasExampleIcon) {
+            if (!text) {
+              button.remove();
+              return;
+            }
+
+            const paragraph = document.createElement('p');
+            paragraph.textContent = text;
+            button.replaceWith(paragraph);
+            return;
+          }
+
+          if (!text || /copy|close|open/i.test(label)) {
+            button.remove();
+          }
+        });
+      }
+
       const svgs = clone.querySelectorAll('svg');
 
       svgs.forEach((svg) => {
@@ -355,7 +480,7 @@ export class MarkdownService {
         html: clone.innerHTML,
         svgCount: svgs.length,
       };
-    }, selector);
+    }, selector, pageUrl);
 
     this.logger?.debug?.('从页面提取 HTML 完成', {
       hasContent: !!html,
@@ -366,6 +491,232 @@ export class MarkdownService {
       debugMeta: { svgCount },
       pageUrl,
     });
+  }
+
+  /**
+   * 对 Markdown 做轻量级站点感知清洗，移除交互残留并保留正文可读性。
+   *
+   * @param {string} markdown
+   * @param {Object} options
+   * @returns {string}
+   */
+  sanitizeMarkdown(markdown, options = {}) {
+    if (!markdown || typeof markdown !== 'string') {
+      return '';
+    }
+
+    let sanitized = markdown;
+
+    sanitized = sanitized.replace(/^\s*Copy Page\s*$/gim, '');
+    sanitized = sanitized.replace(/^\s*Copied\s*$/gim, '');
+
+    if (this._isOpenAiDocsPage(options.pageUrl)) {
+      sanitized = this._normalizeOpenAiExampleTaskCards(sanitized);
+      sanitized = this._stripOpenAiPagerNavigation(sanitized);
+      sanitized = this._normalizeOpenAiQuickstartTabSummary(sanitized);
+      sanitized = this._collapseOpenAiThemeVariantPairs(sanitized);
+    }
+
+    sanitized = this._dedupeConsecutiveImageParagraphs(sanitized);
+
+    return sanitized.replace(/\n{3,}/g, '\n\n').trim();
+  }
+
+  /**
+   * 判断是否为 developers.openai.com 文档页面。
+   *
+   * @param {string} pageUrl
+   * @returns {boolean}
+   * @private
+   */
+  _isOpenAiDocsPage(pageUrl) {
+    if (!pageUrl || typeof pageUrl !== 'string') {
+      return false;
+    }
+
+    try {
+      return new URL(pageUrl).hostname === 'developers.openai.com';
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * 将 OpenAI 文档里的示例 prompt 卡片还原为普通项目符号列表。
+   *
+   * @param {string} markdown
+   * @returns {string}
+   * @private
+   */
+  _normalizeOpenAiExampleTaskCards(markdown) {
+    if (!markdown) return markdown;
+
+    return markdown.replace(
+      /(?:!\[[^\]]*]\([^)]*\)\s*[^!\n]+?\s*Copied\s*)+/g,
+      (match) => {
+        const prompts = Array.from(
+          match.matchAll(/!\[[^\]]*]\([^)]*\)\s*([^!\n]+?)\s*Copied/gi),
+          (entry) => entry[1].trim()
+        ).filter(Boolean);
+
+        if (prompts.length === 0) {
+          return match;
+        }
+
+        return prompts.map((prompt) => `- ${prompt}`).join('\n');
+      }
+    );
+  }
+
+  /**
+   * 移除 OpenAI 文档底部的上一页/下一页导航块。
+   *
+   * @param {string} markdown
+   * @returns {string}
+   * @private
+   */
+  _stripOpenAiPagerNavigation(markdown) {
+    if (!markdown) return markdown;
+
+    return markdown.replace(
+      /\[\s*Previous[\s\S]*?]\([^)]+\)\s*\[\s*Next[\s\S]*?]\([^)]+\)\s*$/m,
+      ''
+    );
+  }
+
+  /**
+   * 兜底清理 Quickstart 页签按钮串成一行的残留文本。
+   *
+   * @param {string} markdown
+   * @returns {string}
+   * @private
+   */
+  _normalizeOpenAiQuickstartTabSummary(markdown) {
+    if (!markdown) return markdown;
+
+    return markdown.replace(
+      /^AppRecommendedIDE extensionCodex in your IDECLICodex in your terminalCloudCodex in your browser$/m,
+      ['- App (Recommended)', '- IDE extension', '- CLI', '- Cloud'].join('\n')
+    );
+  }
+
+  /**
+   * 将 OpenAI 文档中相邻的浅色/深色主题截图收敛为单张截图，避免在 PDF 中拼成超宽图片。
+   *
+   * @param {string} markdown
+   * @returns {string}
+   * @private
+   */
+  _collapseOpenAiThemeVariantPairs(markdown) {
+    if (!markdown) return markdown;
+
+    const imagePattern = /!\[([^\]]*)\]\(([^)\s]+(?:\s+"[^"]*")?)\)/g;
+
+    return markdown.replace(
+      /!\[[^\]]*]\([^)]+\)\s*!\[[^\]]*]\([^)]+\)/g,
+      (match) => {
+        const images = Array.from(match.matchAll(imagePattern), (entry) => ({
+          raw: entry[0],
+          alt: entry[1] || '',
+          target: entry[2] || '',
+        }));
+
+        if (images.length < 2) {
+          return match;
+        }
+
+        const [first, second] = images;
+        if (!this._isOpenAiThemeVariantPair(first, second)) {
+          return match;
+        }
+
+        const preferred = images.find((image) => /(?:^|[-_/])(light)(?:[-_.]|$)/i.test(image.target))
+          || first;
+
+        const cleanedAlt = preferred.alt
+          .replace(/\s*\((?:light|dark) mode\)\s*/gi, '')
+          .trim();
+
+        return `![${cleanedAlt}](${preferred.target})`;
+      }
+    );
+  }
+
+  /**
+   * 判断两张图片是否仅为浅色/深色主题变体。
+   *
+   * @param {{ alt: string, target: string }} first
+   * @param {{ alt: string, target: string }} second
+   * @returns {boolean}
+   * @private
+   */
+  _isOpenAiThemeVariantPair(first, second) {
+    if (!first || !second) {
+      return false;
+    }
+
+    const normalizeAlt = (alt) => alt
+      .replace(/\s*\((?:light|dark) mode\)\s*/gi, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase();
+
+    const normalizeTarget = (target) => {
+      const trimmed = (target || '').trim();
+      const [urlPart] = trimmed.split(/\s+"/, 1);
+
+      try {
+        const url = new URL(urlPart);
+        return url.pathname
+          .replace(/-(?:light|dark)(?=\.[a-z0-9]+$)/i, '')
+          .replace(/\.[a-z0-9]+$/i, '')
+          .toLowerCase();
+      } catch {
+        return urlPart
+          .replace(/-(?:light|dark)(?=\.[a-z0-9]+$)/i, '')
+          .replace(/\.[a-z0-9]+$/i, '')
+          .toLowerCase();
+      }
+    };
+
+    const firstAlt = normalizeAlt(first.alt);
+    const secondAlt = normalizeAlt(second.alt);
+    const firstTarget = normalizeTarget(first.target);
+    const secondTarget = normalizeTarget(second.target);
+
+    if (!firstTarget || !secondTarget || firstTarget !== secondTarget) {
+      return false;
+    }
+
+    return firstAlt === secondAlt || !firstAlt || !secondAlt;
+  }
+
+  /**
+   * 删除相邻的重复图片段落，避免同一张截图因浅色/弹层结构被重复保留。
+   *
+   * @param {string} markdown
+   * @returns {string}
+   * @private
+   */
+  _dedupeConsecutiveImageParagraphs(markdown) {
+    if (!markdown) return markdown;
+
+    const paragraphs = markdown.split(/\n{2,}/);
+    const result = [];
+
+    for (const paragraph of paragraphs) {
+      const trimmed = paragraph.trim();
+      const previous = result[result.length - 1]?.trim();
+      const isImageParagraph = /^(!\[[^\]]*]\([^)]*\)\s*)+$/.test(trimmed);
+
+      if (isImageParagraph && previous === trimmed) {
+        continue;
+      }
+
+      result.push(paragraph);
+    }
+
+    return result.join('\n\n');
   }
 
   /**
