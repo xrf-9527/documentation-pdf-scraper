@@ -409,11 +409,11 @@ describe('PandocPdfService', () => {
       expect(result).toContain('# Real title');
     });
 
-    it('should downgrade webp markdown images to plain links', () => {
+    it('should preserve webp markdown images for the conversion stage', () => {
       const input = '![App screenshot](https://developers.openai.com/images/app.webp)';
       const result = service._cleanMarkdownContent(input);
 
-      expect(result).toBe('[App screenshot](https://developers.openai.com/images/app.webp)');
+      expect(result).toBe('![App screenshot](https://developers.openai.com/images/app.webp)');
     });
 
     it('should keep images when fm=webp is rewritten to a safe output format', () => {
@@ -424,12 +424,12 @@ describe('PandocPdfService', () => {
       expect(result).toBe('![Chart](https://cdn.example.com/chart.webp?fm=png&fit=max)');
     });
 
-    it('should downgrade raw html img tags that point to webp assets', () => {
+    it('should preserve raw html img tags that point to webp assets for conversion', () => {
       const input =
         '<img src="https://developers.openai.com/images/app.webp" alt="App screenshot">';
       const result = service._cleanMarkdownContent(input);
 
-      expect(result).toBe('[App screenshot](https://developers.openai.com/images/app.webp)');
+      expect(result).toBe('<img src="https://developers.openai.com/images/app.webp" alt="App screenshot">');
     });
 
     it('should preserve export/import lines inside fenced code blocks', () => {
@@ -497,6 +497,116 @@ describe('PandocPdfService', () => {
       expect(result).toContain('export VAR=1');
       // The import outside the fence must be stripped
       expect(result).not.toMatch(/^import Leak/m);
+    });
+  });
+
+  describe('_preparePdfImages', () => {
+    it('should rewrite unsafe markdown images to local png files when conversion succeeds', async () => {
+      vi.spyOn(service, '_materializePdfSafeImage').mockResolvedValue('/tmp/converted/app.png');
+
+      const result = await service._preparePdfImages(
+        '![App screenshot](https://developers.openai.com/images/app.webp)',
+        tempDir
+      );
+
+      expect(result.content).toBe('![App screenshot](/tmp/converted/app.png)');
+      expect(result.cleanupPaths).toHaveLength(1);
+    });
+
+    it('should preserve markdown image titles while extracting only the image url', async () => {
+      const materializeSpy = vi
+        .spyOn(service, '_materializePdfSafeImage')
+        .mockResolvedValue('/tmp/converted/app.png');
+
+      const result = await service._preparePdfImages(
+        '![App screenshot](https://developers.openai.com/images/app.webp "caption")',
+        tempDir
+      );
+
+      expect(materializeSpy).toHaveBeenCalledWith(
+        'https://developers.openai.com/images/app.webp',
+        expect.stringContaining('media-')
+      );
+      expect(result.content).toBe('![App screenshot](/tmp/converted/app.png "caption")');
+    });
+
+    it('should downgrade unsafe markdown images to plain links when conversion fails', async () => {
+      vi.spyOn(service, '_materializePdfSafeImage').mockRejectedValue(new Error('boom'));
+
+      const result = await service._preparePdfImages(
+        '![App screenshot](https://developers.openai.com/images/app.webp)',
+        tempDir
+      );
+
+      expect(result.content).toBe('[App screenshot](https://developers.openai.com/images/app.webp)');
+      expect(mockLogger.warn).toHaveBeenCalled();
+    });
+
+    it('should rewrite unsafe raw html img tags to local markdown images', async () => {
+      vi.spyOn(service, '_materializePdfSafeImage').mockResolvedValue('/tmp/converted/review.png');
+
+      const result = await service._preparePdfImages(
+        '<img src="https://developers.openai.com/images/app.webp" alt="Review pane">',
+        tempDir
+      );
+
+      expect(result.content).toBe('![Review pane](/tmp/converted/review.png)');
+    });
+
+    it('should not rewrite markdown or html image examples inside fenced code blocks', async () => {
+      const materializeSpy = vi
+        .spyOn(service, '_materializePdfSafeImage')
+        .mockResolvedValue('/tmp/converted/review.png');
+
+      const input = [
+        '```md',
+        '![Example](https://developers.openai.com/images/example.webp "caption")',
+        '<img src="https://developers.openai.com/images/example-html.webp" alt="HTML example">',
+        '```',
+        '',
+        '<img src="https://developers.openai.com/images/review.webp" alt="Review pane">',
+      ].join('\n');
+
+      const result = await service._preparePdfImages(input, tempDir);
+
+      expect(materializeSpy).toHaveBeenCalledTimes(1);
+      expect(materializeSpy).toHaveBeenCalledWith(
+        'https://developers.openai.com/images/review.webp',
+        expect.stringContaining('media-')
+      );
+      expect(result.content).toBe([
+        '```md',
+        '![Example](https://developers.openai.com/images/example.webp "caption")',
+        '<img src="https://developers.openai.com/images/example-html.webp" alt="HTML example">',
+        '```',
+        '',
+        '![Review pane](/tmp/converted/review.png)',
+      ].join('\n'));
+    });
+  });
+
+  describe('_extractPdfUnsafeImageUrls', () => {
+    it('should extract only the image url when markdown image has an optional title', () => {
+      expect(
+        service._extractPdfUnsafeImageUrls(
+          '![App screenshot](https://developers.openai.com/images/app.webp "caption")'
+        )
+      ).toEqual(['https://developers.openai.com/images/app.webp']);
+    });
+
+    it('should ignore fenced code block image examples', () => {
+      const input = [
+        '```md',
+        '![Example](https://developers.openai.com/images/example.webp)',
+        '<img src="https://developers.openai.com/images/example-html.webp" alt="HTML example">',
+        '```',
+        '',
+        '![Real](https://developers.openai.com/images/real.webp)',
+      ].join('\n');
+
+      expect(service._extractPdfUnsafeImageUrls(input)).toEqual([
+        'https://developers.openai.com/images/real.webp',
+      ]);
     });
   });
 

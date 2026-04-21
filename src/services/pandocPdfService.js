@@ -1,5 +1,6 @@
 // src/services/pandocPdfService.js
 import { spawn } from 'child_process';
+import { createHash } from 'crypto';
 import path from 'path';
 import fs from 'fs';
 import { fromMarkdown } from 'mdast-util-from-markdown';
@@ -73,8 +74,9 @@ export class PandocPdfService {
 
       // 清理 Markdown 内容（修复代码块语法问题）
       const cleanedContent = this._cleanMarkdownContent(markdownContent);
+      const preparedContent = await this._preparePdfImages(cleanedContent, tempDir);
 
-      fs.writeFileSync(tempFile, cleanedContent, 'utf8');
+      fs.writeFileSync(tempFile, preparedContent.content, 'utf8');
 
       try {
         await this._runPandoc(tempFile, outputPath, options);
@@ -84,6 +86,16 @@ export class PandocPdfService {
           fs.unlinkSync(tempFile);
         } catch {
           // 忽略清理错误
+        }
+
+        if (preparedContent.cleanupPaths.length > 0) {
+          preparedContent.cleanupPaths.forEach((cleanupPath) => {
+            try {
+              fs.rmSync(cleanupPath, { recursive: true, force: true });
+            } catch {
+              // 忽略清理错误
+            }
+          });
         }
       }
 
@@ -535,8 +547,439 @@ export class PandocPdfService {
   }
 
   /**
+   * Split markdown into prose/code segments so fenced code block examples can
+   * be preserved verbatim during prose-only rewrites.
+   *
+   * @param {string} content
+   * @returns {{type: 'prose' | 'code', text: string}[]}
+   * @private
+   */
+  _splitFencedCodeBlockSegments(content) {
+    if (typeof content !== 'string' || content.length === 0) {
+      return [];
+    }
+
+    const lines = content.split('\n');
+    const segments = [];
+    let buffer = [];
+    let currentType = 'prose';
+    let inFence = false;
+    let fenceChar = '';
+    let fenceCount = 0;
+
+    const flush = () => {
+      if (buffer.length === 0) return;
+      segments.push({ type: currentType, text: buffer.join('\n') });
+      buffer = [];
+    };
+
+    for (const line of lines) {
+      const fenceMatch = line.match(/^\s*>?\s*(`{3,}|~{3,})(.*)$/);
+
+      if (!inFence && fenceMatch) {
+        flush();
+        inFence = true;
+        currentType = 'code';
+        fenceChar = fenceMatch[1][0];
+        fenceCount = fenceMatch[1].length;
+        buffer.push(line);
+        continue;
+      }
+
+      if (
+        inFence &&
+        fenceMatch &&
+        fenceMatch[1][0] === fenceChar &&
+        fenceMatch[1].length >= fenceCount &&
+        fenceMatch[2].trim() === ''
+      ) {
+        buffer.push(line);
+        flush();
+        inFence = false;
+        currentType = 'prose';
+        fenceChar = '';
+        fenceCount = 0;
+        continue;
+      }
+
+      buffer.push(line);
+    }
+
+    flush();
+    return segments;
+  }
+
+  /**
+   * Apply a transform only to prose segments outside fenced code blocks.
+   *
+   * @param {string} content
+   * @param {(segment: string) => string} transform
+   * @returns {string}
+   * @private
+   */
+  _mapProseSegments(content, transform) {
+    if (!content) return content;
+
+    const segments = this._splitFencedCodeBlockSegments(content);
+    if (segments.length === 0) return content;
+
+    return segments
+      .map((segment) => (segment.type === 'prose' ? transform(segment.text) : segment.text))
+      .join('\n');
+  }
+
+  /**
+   * Find the closing `]` for an image alt text while honoring nested brackets
+   * and backslash escapes.
+   *
+   * @param {string} content
+   * @param {number} openBracketIndex
+   * @returns {number}
+   * @private
+   */
+  _findClosingMarkdownBracket(content, openBracketIndex) {
+    let depth = 1;
+
+    for (let i = openBracketIndex + 1; i < content.length; i++) {
+      if (content[i] === '\\') {
+        i++;
+        continue;
+      }
+
+      if (content[i] === '[') {
+        depth++;
+      } else if (content[i] === ']') {
+        depth--;
+        if (depth === 0) {
+          return i;
+        }
+      }
+    }
+
+    return -1;
+  }
+
+  /**
+   * Parse the destination/title portion of `![alt](...)` without greedily
+   * swallowing optional title text.
+   *
+   * @param {string} content
+   * @param {number} openParenIndex
+   * @returns {{end: number, url: string, destinationSource: string, titleSource: string}|null}
+   * @private
+   */
+  _parseMarkdownImageTarget(content, openParenIndex) {
+    let i = openParenIndex + 1;
+    let depth = 1;
+    let inQuote = '';
+    let inAngle = false;
+
+    while (i < content.length) {
+      const char = content[i];
+
+      if (char === '\\') {
+        i += 2;
+        continue;
+      }
+
+      if (inQuote) {
+        if (char === inQuote) {
+          inQuote = '';
+        }
+        i++;
+        continue;
+      }
+
+      if (inAngle) {
+        if (char === '>') {
+          inAngle = false;
+        }
+        i++;
+        continue;
+      }
+
+      if (char === '<') {
+        inAngle = true;
+      } else if (char === '"' || char === "'") {
+        inQuote = char;
+      } else if (char === '(') {
+        depth++;
+      } else if (char === ')') {
+        depth--;
+        if (depth === 0) {
+          break;
+        }
+      }
+
+      i++;
+    }
+
+    if (depth !== 0) {
+      return null;
+    }
+
+    const inner = content.slice(openParenIndex + 1, i);
+    const parsed = this._parseMarkdownImageTargetBody(inner);
+    if (!parsed?.url) {
+      return null;
+    }
+
+    return { end: i, ...parsed };
+  }
+
+  /**
+   * Parse the inside of `![alt](...)` into destination and optional title.
+   *
+   * @param {string} targetBody
+   * @returns {{url: string, destinationSource: string, titleSource: string}|null}
+   * @private
+   */
+  _parseMarkdownImageTargetBody(targetBody) {
+    let i = 0;
+
+    while (i < targetBody.length && /\s/.test(targetBody[i])) {
+      i++;
+    }
+
+    if (i >= targetBody.length) {
+      return null;
+    }
+
+    const destinationStart = i;
+    let destinationSource = '';
+    let url = '';
+
+    if (targetBody[i] === '<') {
+      i++;
+      const urlStart = i;
+
+      while (i < targetBody.length) {
+        if (targetBody[i] === '\\') {
+          i += 2;
+          continue;
+        }
+        if (targetBody[i] === '>') {
+          break;
+        }
+        i++;
+      }
+
+      if (i >= targetBody.length || targetBody[i] !== '>') {
+        return null;
+      }
+
+      destinationSource = targetBody.slice(destinationStart, i + 1);
+      url = targetBody.slice(urlStart, i);
+      i++;
+    } else {
+      let parenDepth = 0;
+
+      while (i < targetBody.length) {
+        const char = targetBody[i];
+
+        if (char === '\\') {
+          i += 2;
+          continue;
+        }
+
+        if (/\s/.test(char) && parenDepth === 0) {
+          break;
+        }
+
+        if (char === '(') {
+          parenDepth++;
+        } else if (char === ')' && parenDepth > 0) {
+          parenDepth--;
+        }
+
+        i++;
+      }
+
+      destinationSource = targetBody.slice(destinationStart, i);
+      url = destinationSource.trim();
+    }
+
+    if (!url) {
+      return null;
+    }
+
+    const remainder = targetBody.slice(i).trim();
+    if (!remainder) {
+      return { url, destinationSource, titleSource: '' };
+    }
+
+    const titleSource = this._parseMarkdownTitleSource(remainder);
+    return { url, destinationSource, titleSource };
+  }
+
+  /**
+   * Parse a valid markdown title suffix (`"..."`, `'...'`, or `(...)`).
+   *
+   * @param {string} remainder
+   * @returns {string}
+   * @private
+   */
+  _parseMarkdownTitleSource(remainder) {
+    const opener = remainder[0];
+    const closer = opener === '(' ? ')' : opener === '"' ? '"' : opener === "'" ? "'" : '';
+
+    if (!closer) {
+      return '';
+    }
+
+    let i = 1;
+    while (i < remainder.length) {
+      if (remainder[i] === '\\') {
+        i += 2;
+        continue;
+      }
+
+      if (remainder[i] === closer) {
+        return remainder.slice(i + 1).trim() === '' ? remainder.slice(0, i + 1) : '';
+      }
+
+      i++;
+    }
+
+    return '';
+  }
+
+  /**
+   * Collect markdown image references from prose content.
+   *
+   * @param {string} content
+   * @returns {Array<{type: 'markdown', start: number, end: number, altText: string, url: string, destinationSource: string, titleSource: string}>}
+   * @private
+   */
+  _collectMarkdownImageReferences(content) {
+    if (!content) return [];
+
+    const references = [];
+
+    for (let i = 0; i < content.length - 1; i++) {
+      if (content[i] !== '!' || content[i + 1] !== '[') {
+        continue;
+      }
+
+      const altOpenIndex = i + 1;
+      const altCloseIndex = this._findClosingMarkdownBracket(content, altOpenIndex);
+      if (altCloseIndex === -1 || content[altCloseIndex + 1] !== '(') {
+        continue;
+      }
+
+      const parsedTarget = this._parseMarkdownImageTarget(content, altCloseIndex + 1);
+      if (!parsedTarget) {
+        continue;
+      }
+
+      references.push({
+        type: 'markdown',
+        start: i,
+        end: parsedTarget.end + 1,
+        altText: content.slice(i + 2, altCloseIndex),
+        url: parsedTarget.url,
+        destinationSource: parsedTarget.destinationSource,
+        titleSource: parsedTarget.titleSource,
+      });
+
+      i = parsedTarget.end;
+    }
+
+    return references;
+  }
+
+  /**
+   * Collect raw HTML <img> references from prose content.
+   *
+   * @param {string} content
+   * @returns {Array<{type: 'html', start: number, end: number, altText: string, url: string}>}
+   * @private
+   */
+  _collectHtmlImageReferences(content) {
+    if (!content) return [];
+
+    const references = [];
+
+    for (const match of content.matchAll(/<img\b([^>]*?)src=(["'])([^"']+)\2([^>]*)>/gi)) {
+      const start = match.index ?? 0;
+      const attrs = `${match[1]} ${match[4]}`;
+      const altMatch = attrs.match(/\balt=(["'])(.*?)\1/i);
+
+      references.push({
+        type: 'html',
+        start,
+        end: start + match[0].length,
+        altText: altMatch?.[2]?.trim() || 'Image',
+        url: match[3],
+      });
+    }
+
+    return references;
+  }
+
+  /**
+   * Collect remote image references from prose content only.
+   *
+   * @param {string} content
+   * @returns {Array}
+   * @private
+   */
+  _collectRemoteImageReferencesFromProse(content) {
+    return [
+      ...this._collectMarkdownImageReferences(content),
+      ...this._collectHtmlImageReferences(content),
+    ].filter((reference) => this._isRemoteImageUrl(reference.url));
+  }
+
+  /**
+   * Rewrite remote image references in prose while preserving fenced code
+   * blocks verbatim.
+   *
+   * @param {string} content
+   * @param {Map<string, string|null>} resolvedUrls
+   * @returns {string}
+   * @private
+   */
+  _rewritePdfImagesInProse(content, resolvedUrls) {
+    const references = this._collectRemoteImageReferencesFromProse(content);
+    if (references.length === 0) {
+      return content;
+    }
+
+    let rewritten = content;
+
+    references
+      .sort((a, b) => b.start - a.start)
+      .forEach((reference) => {
+        const localPath = resolvedUrls.get(reference.url);
+        let replacement;
+
+        if (reference.type === 'markdown') {
+          if (localPath) {
+            replacement =
+              `![${reference.altText}](${localPath}` +
+              `${reference.titleSource ? ` ${reference.titleSource}` : ''})`;
+          } else {
+            const label = reference.altText.trim() || 'Image';
+            replacement =
+              `[${label}](${reference.destinationSource}` +
+              `${reference.titleSource ? ` ${reference.titleSource}` : ''})`;
+          }
+        } else if (localPath) {
+          replacement = `![${reference.altText}](${localPath})`;
+        } else {
+          replacement = `[${reference.altText}](${reference.url})`;
+        }
+
+        rewritten = rewritten.slice(0, reference.start) + replacement + rewritten.slice(reference.end);
+      });
+
+    return rewritten;
+  }
+
+  /**
    * 检查图片 URL 是否是 XeLaTeX/Pandoc 不稳定的格式。
-   * 目前重点处理 webp/avif；如果 URL 已显式请求 png/jpg/jpeg，则认为安全。
+   * XeLaTeX 原生更适合 png/jpg/pdf；webp/avif/gif/svg 需要额外处理。
    *
    * @param {string} url
    * @returns {boolean}
@@ -552,7 +995,11 @@ export class PandocPdfService {
       return false;
     }
 
-    return /\.(?:webp|avif)(?:$|[?#])/i.test(lower);
+    if (/\.(?:png|jpe?g|pdf)(?:$|[?#])/i.test(lower)) {
+      return false;
+    }
+
+    return /\.(?:webp|avif|gif|svg)(?:$|[?#])/i.test(lower);
   }
 
   /**
@@ -594,6 +1041,227 @@ export class PandocPdfService {
     );
 
     return downgraded;
+  }
+
+  /**
+   * 将 Markdown 中仍不适合 XeLaTeX 直接处理的图片优先转换为本地 PNG；
+   * 如果转换失败，则回退为普通超链接以避免整个 PDF 生成失败。
+   *
+   * @param {string} content
+   * @param {string} tempRootDir
+   * @returns {Promise<{content: string, cleanupPaths: string[]}>}
+   * @private
+   */
+  async _preparePdfImages(content, tempRootDir) {
+    if (!content) {
+      return { content, cleanupPaths: [] };
+    }
+
+    const urls = this._extractPdfUnsafeImageUrls(content);
+    if (urls.length === 0) {
+      return { content, cleanupPaths: [] };
+    }
+
+    const mediaDir = path.join(tempRootDir, `media-${Date.now()}`);
+    const resolvedUrls = new Map();
+    const cleanupPaths = [mediaDir];
+
+    for (const url of urls) {
+      try {
+        const localPath = await this._materializePdfSafeImage(url, mediaDir);
+        resolvedUrls.set(url, localPath);
+      } catch (error) {
+        this.logger?.warn?.('图片转换失败，将降级为普通链接', {
+          url,
+          error: error.message,
+        });
+        resolvedUrls.set(url, null);
+      }
+    }
+
+    const prepared = this._mapProseSegments(content, (segment) =>
+      this._rewritePdfImagesInProse(segment, resolvedUrls)
+    );
+
+    return { content: prepared, cleanupPaths };
+  }
+
+  /**
+   * 提取内容中所有需要额外转换的图片 URL。
+   *
+   * @param {string} content
+   * @returns {string[]}
+   * @private
+   */
+  _extractPdfUnsafeImageUrls(content) {
+    if (!content) return [];
+
+    const urls = new Set();
+
+    for (const segment of this._splitFencedCodeBlockSegments(content)) {
+      if (segment.type !== 'prose') {
+        continue;
+      }
+
+      for (const reference of this._collectRemoteImageReferencesFromProse(segment.text)) {
+        urls.add(reference.url);
+      }
+    }
+
+    return Array.from(urls);
+  }
+
+  /**
+   * 下载并转换远程图片为本地 PNG，供 Pandoc/XeLaTeX 稳定读取。
+   *
+   * @param {string} url
+   * @param {string} mediaDir
+   * @returns {Promise<string|null>}
+   * @private
+   */
+  async _materializePdfSafeImage(url, mediaDir) {
+    if (!url || !/^https?:\/\//i.test(url)) {
+      return null;
+    }
+
+    fs.mkdirSync(mediaDir, { recursive: true });
+
+    const digest = createHash('sha256').update(url).digest('hex').slice(0, 24);
+    const response = await fetch(url, {
+      headers: {
+        'user-agent': 'documentation-pdf-scraper/1.0',
+      },
+      signal: AbortSignal.timeout(30000),
+    });
+
+    if (!response.ok) {
+      throw new Error(`下载失败: HTTP ${response.status}`);
+    }
+
+    const contentType = response.headers.get('content-type') || '';
+    const sourceExtension = this._getImageExtensionFromUrl(url, contentType);
+    const sourcePath = path.join(mediaDir, `${digest}${sourceExtension}`);
+    const outputPath = path.join(mediaDir, `${digest}.png`);
+
+    if (fs.existsSync(outputPath)) {
+      return outputPath;
+    }
+    if (fs.existsSync(sourcePath) && !this._shouldConvertDownloadedImage(url, contentType)) {
+      return sourcePath;
+    }
+
+    const buffer = Buffer.from(await response.arrayBuffer());
+    await fs.promises.writeFile(sourcePath, buffer);
+
+    if (!this._shouldConvertDownloadedImage(url, contentType)) {
+      return sourcePath;
+    }
+
+    await this._convertImageToPng(sourcePath, outputPath);
+    return outputPath;
+  }
+
+  /**
+   * 判断是否为远程图片 URL。
+   *
+   * @param {string} url
+   * @returns {boolean}
+   * @private
+   */
+  _isRemoteImageUrl(url) {
+    return typeof url === 'string' && /^https?:\/\//i.test(url.trim());
+  }
+
+  /**
+   * 判断下载后的图片是否需要转为 PNG 才能稳定进入 XeLaTeX。
+   *
+   * @param {string} url
+   * @param {string} contentType
+   * @returns {boolean}
+   * @private
+   */
+  _shouldConvertDownloadedImage(url, contentType = '') {
+    const normalizedType = contentType.toLowerCase();
+
+    if (normalizedType.includes('image/png') || normalizedType.includes('image/jpeg')) {
+      return false;
+    }
+
+    if (normalizedType.includes('application/pdf')) {
+      return false;
+    }
+
+    if (normalizedType.includes('image/webp')) return true;
+    if (normalizedType.includes('image/avif')) return true;
+    if (normalizedType.includes('image/gif')) return true;
+    if (normalizedType.includes('image/svg+xml')) return true;
+
+    return this._isPdfUnsafeImageUrl(url);
+  }
+
+  /**
+   * 使用项目自带 Python 运行时把图片转换为 PNG。
+   *
+   * @param {string} inputPath
+   * @param {string} outputPath
+   * @returns {Promise<void>}
+   * @private
+   */
+  async _convertImageToPng(inputPath, outputPath) {
+    const pythonExecutable = this.config.python?.executable || 'python3';
+    const scriptPath = path.join(process.cwd(), 'src/python/convert_image.py');
+
+    await new Promise((resolve, reject) => {
+      const child = spawn(pythonExecutable, [scriptPath, inputPath, outputPath]);
+      let stderr = '';
+
+      child.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      child.on('close', (code) => {
+        if (code !== 0) {
+          reject(new Error(stderr.trim() || `image conversion exited with code ${code}`));
+          return;
+        }
+
+        resolve();
+      });
+
+      child.on('error', (error) => {
+        reject(error);
+      });
+    });
+  }
+
+  /**
+   * 从 URL 推断文件扩展名；推断失败时保底使用 .img。
+   *
+   * @param {string} url
+   * @returns {string}
+   * @private
+   */
+  _getImageExtensionFromUrl(url, contentType = '') {
+    const normalizedType = contentType.toLowerCase();
+    if (normalizedType.includes('image/png')) return '.png';
+    if (normalizedType.includes('image/jpeg')) return '.jpg';
+    if (normalizedType.includes('image/webp')) return '.webp';
+    if (normalizedType.includes('image/avif')) return '.avif';
+    if (normalizedType.includes('image/gif')) return '.gif';
+    if (normalizedType.includes('image/svg+xml')) return '.svg';
+    if (normalizedType.includes('application/pdf')) return '.pdf';
+
+    if (!url || typeof url !== 'string') {
+      return '.img';
+    }
+
+    try {
+      const pathname = new URL(url).pathname || '';
+      const extension = path.extname(pathname);
+      return extension || '.img';
+    } catch {
+      return '.img';
+    }
   }
 
   /**
@@ -716,9 +1384,6 @@ export class PandocPdfService {
     // 5. 将图片 URL 中的 fm=webp 替换为 fm=png（LaTeX 不支持 webp 格式）
     cleaned = cleaned.replace(/fm=webp/g, 'fm=png');
 
-    // 6. 对仍然是 PDF 不安全格式的图片做降级，避免 Pandoc/XeLaTeX 直接失败。
-    cleaned = this._downgradePdfUnsafeImages(cleaned);
-
     return cleaned;
   }
 
@@ -747,7 +1412,7 @@ export class PandocPdfService {
       '--variable',
       'geometry:margin=1in', // 页边距
       '--variable',
-      'header-includes=\\usepackage{fvextra} \\DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines,breakanywhere,commandchars=\\\\\\{\\}} \\usepackage{xurl}', // 启用代码换行(支持任意位置) 和 URL 换行。不再使用 ltablex 防止表格溢出
+      'header-includes=\\usepackage{fvextra} \\DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines,breakanywhere,fontsize=\\\\small,commandchars=\\\\\\{\\}} \\usepackage{xurl}', // 启用代码换行(支持任意位置)、缩小代码字号并增强 URL 换行。不再使用 ltablex 防止表格溢出
     ];
 
     // 添加其他选项
@@ -847,7 +1512,8 @@ export class PandocPdfService {
       }
 
       const tempFile = path.join(tempDir, `batch_${Date.now()}.md`);
-      fs.writeFileSync(tempFile, cleanedContent, 'utf8');
+      const preparedContent = await this._preparePdfImages(cleanedContent, tempDir);
+      fs.writeFileSync(tempFile, preparedContent.content, 'utf8');
 
       // Ensure output directory exists
       const outputDir = path.dirname(outputPath);
@@ -878,6 +1544,16 @@ export class PandocPdfService {
           fs.unlinkSync(tempFile);
         } catch {
           // Ignore cleanup errors
+        }
+
+        if (preparedContent.cleanupPaths.length > 0) {
+          preparedContent.cleanupPaths.forEach((cleanupPath) => {
+            try {
+              fs.rmSync(cleanupPath, { recursive: true, force: true });
+            } catch {
+              // Ignore cleanup errors
+            }
+          });
         }
       }
     } catch (error) {

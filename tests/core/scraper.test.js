@@ -474,6 +474,7 @@ describe('Scraper', () => {
         normalizeResourceUrls: vi.fn((content) =>
           content.replace('/images/app.png', 'https://example.com/images/app.png')
         ),
+        sanitizeMarkdown: vi.fn((content) => content),
         extractAndConvertPage: vi.fn(),
         addFrontmatter: vi.fn((content) => content),
       };
@@ -497,6 +498,12 @@ describe('Scraper', () => {
       expect(mockDependencies.markdownService.normalizeResourceUrls).toHaveBeenCalledWith(
         '![App](/images/app.png)',
         testUrl
+      );
+      expect(mockDependencies.markdownService.sanitizeMarkdown).toHaveBeenCalledWith(
+        '![App](https://example.com/images/app.png)',
+        {
+          pageUrl: testUrl,
+        }
       );
       expect(mockDependencies.fileService.writeText).toHaveBeenCalledWith(
         expect.stringContaining('.md'),

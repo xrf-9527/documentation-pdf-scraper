@@ -131,6 +131,76 @@ describe('MarkdownService', () => {
     expect(markdown).not.toContain('Please enable JS');
   });
 
+  test('sanitizeMarkdown 应该移除 OpenAI 页面交互残留并保留示例 prompt', () => {
+    const service = new MarkdownService({ logger });
+    const markdown = [
+      'Copy Page',
+      '',
+      '![](https://developers.openai.com/codex/colorcons/brain.png)Tell me about this projectCopied![](https://developers.openai.com/codex/colorcons/search.png)Find and fix bugs in my codebase with minimal, high-confidence changes.Copied',
+      '',
+      '[',
+      '',
+      'Previous',
+      '',
+      'Settings',
+      '',
+      '](/codex/app/settings)[',
+      '',
+      'Next',
+      '',
+      'Automations',
+      '',
+      '](/codex/app/automations)',
+    ].join('\n');
+
+    const result = service.sanitizeMarkdown(markdown, {
+      pageUrl: 'https://developers.openai.com/codex/app/review',
+    });
+
+    expect(result).not.toContain('Copy Page');
+    expect(result).toContain('- Tell me about this project');
+    expect(result).toContain('- Find and fix bugs in my codebase with minimal, high-confidence changes.');
+    expect(result).not.toContain('Previous');
+    expect(result).not.toContain('Automations');
+  });
+
+  test('sanitizeMarkdown 应该对 Quickstart 的页签摘要做兜底格式化', () => {
+    const service = new MarkdownService({ logger });
+    const markdown =
+      'AppRecommendedIDE extensionCodex in your IDECLICodex in your terminalCloudCodex in your browser';
+
+    const result = service.sanitizeMarkdown(markdown, {
+      pageUrl: 'https://developers.openai.com/codex/quickstart',
+    });
+
+    expect(result).toContain('- App (Recommended)');
+    expect(result).toContain('- IDE extension');
+    expect(result).toContain('- CLI');
+    expect(result).toContain('- Cloud');
+  });
+
+  test('sanitizeMarkdown 应该收敛 OpenAI 文档相邻的 light/dark 主题截图', () => {
+    const service = new MarkdownService({ logger });
+    const markdown = [
+      '![Assigning Codex to a Linear issue (light mode)](https://developers.openai.com/images/codex/integrations/linear-assign-codex-light.webp)![Assigning Codex to a Linear issue (dark mode)](https://developers.openai.com/images/codex/integrations/linear-assign-codex-dark.webp)',
+      '',
+      '![plugin-creator skill in Codex](https://developers.openai.com/images/codex/plugins/plugin-creator.png)',
+      '',
+      '![how to invoke the plugin-creator skill](https://developers.openai.com/images/codex/plugins/plugin-creator-invoke.png)',
+    ].join('\n');
+
+    const result = service.sanitizeMarkdown(markdown, {
+      pageUrl: 'https://developers.openai.com/codex/integrations/linear',
+    });
+
+    expect(result).toContain(
+      '![Assigning Codex to a Linear issue](https://developers.openai.com/images/codex/integrations/linear-assign-codex-light.webp)'
+    );
+    expect(result).not.toContain('linear-assign-codex-dark.webp');
+    expect(result).toContain('plugin-creator.png');
+    expect(result).toContain('plugin-creator-invoke.png');
+  });
+
   test('代码块应保留语言标识', () => {
     const service = new MarkdownService({ logger });
     const html = '<pre><code class="language-js">const x = 1;</code></pre>';
