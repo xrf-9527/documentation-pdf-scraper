@@ -49,6 +49,7 @@ describe('Scraper', () => {
       },
       fileService: {
         ensureDirectory: vi.fn(),
+        writeText: vi.fn(),
       },
       pathService: {
         getPdfPath: vi.fn().mockReturnValue('./pdfs/001-page.pdf'),
@@ -119,6 +120,9 @@ describe('Scraper', () => {
           printBackground: true,
         }),
       },
+      markdownService: null,
+      translationService: null,
+      markdownToPdfService: null,
     };
 
     scraper = new Scraper(mockDependencies);
@@ -459,6 +463,45 @@ describe('Scraper', () => {
       await scraper.scrapePage(testUrl, testIndex);
 
       expect(mockDependencies.stateManager.save).toHaveBeenCalled();
+    });
+
+    it('should normalize relative asset URLs when using markdown source workflow', async () => {
+      scraper.config.markdown = { enabled: true };
+      scraper.config.markdownPdf = { enabled: true, batchMode: true };
+      scraper.config.markdownSource = { enabled: true };
+
+      mockDependencies.markdownService = {
+        normalizeResourceUrls: vi.fn((content) =>
+          content.replace('/images/app.png', 'https://example.com/images/app.png')
+        ),
+        extractAndConvertPage: vi.fn(),
+        addFrontmatter: vi.fn((content) => content),
+      };
+      mockDependencies.markdownToPdfService = {
+        convertContentToPdf: vi.fn(),
+      };
+      mockDependencies.translationService = null;
+
+      scraper.markdownService = mockDependencies.markdownService;
+      scraper.markdownToPdfService = mockDependencies.markdownToPdfService;
+      scraper.translationService = null;
+
+      vi.spyOn(scraper, '_fetchMarkdownSource').mockResolvedValue({
+        content: '![App](/images/app.png)',
+        title: 'Page Title',
+      });
+
+      const result = await scraper.scrapePage(testUrl, testIndex);
+
+      expect(result.status).toBe('success');
+      expect(mockDependencies.markdownService.normalizeResourceUrls).toHaveBeenCalledWith(
+        '![App](/images/app.png)',
+        testUrl
+      );
+      expect(mockDependencies.fileService.writeText).toHaveBeenCalledWith(
+        expect.stringContaining('.md'),
+        '![App](https://example.com/images/app.png)'
+      );
     });
   });
 

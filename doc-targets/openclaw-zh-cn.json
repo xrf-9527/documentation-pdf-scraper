@@ -33,6 +33,7 @@
     "urlSuffix": ".md"
   },
   "targetUrls": [
+    "https://docs.openclaw.ai/zh-CN/AGENTS",
     "https://docs.openclaw.ai/zh-CN/automation/cron-jobs",
     "https://docs.openclaw.ai/zh-CN/automation/hooks",
     "https://docs.openclaw.ai/zh-CN/brave-search",
@@ -138,6 +139,7 @@
     "https://docs.openclaw.ai/zh-CN/gateway/background-process",
     "https://docs.openclaw.ai/zh-CN/gateway/bonjour",
     "https://docs.openclaw.ai/zh-CN/gateway/bridge-protocol",
+    "https://docs.openclaw.ai/zh-CN/gateway/cli-backends",
     "https://docs.openclaw.ai/zh-CN/gateway/configuration",
     "https://docs.openclaw.ai/zh-CN/gateway/configuration-examples",
     "https://docs.openclaw.ai/zh-CN/gateway/discovery",
@@ -164,9 +166,11 @@
     "https://docs.openclaw.ai/zh-CN/gateway/troubleshooting",
     "https://docs.openclaw.ai/zh-CN/help/debugging",
     "https://docs.openclaw.ai/zh-CN/help/environment",
+    "https://docs.openclaw.ai/zh-CN/help/faq",
     "https://docs.openclaw.ai/zh-CN/help",
     "https://docs.openclaw.ai/zh-CN/help/scripts",
     "https://docs.openclaw.ai/zh-CN/help/testing",
+    "https://docs.openclaw.ai/zh-CN/help/troubleshooting",
     "https://docs.openclaw.ai/zh-CN",
     "https://docs.openclaw.ai/zh-CN/install/ansible",
     "https://docs.openclaw.ai/zh-CN/install/bun",

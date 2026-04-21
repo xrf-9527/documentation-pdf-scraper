@@ -25,6 +25,39 @@ describe('MarkdownService', () => {
     expect(markdown).toContain('Content');
   });
 
+  test('convertHtmlToMarkdown 应该将根相对图片 URL 规范为绝对地址', () => {
+    const service = new MarkdownService({ logger });
+    const html = '<p><img src="/images/hero.png" alt="Hero"></p>';
+
+    const markdown = service.convertHtmlToMarkdown(html, {
+      pageUrl: 'https://developers.openai.com/codex/overview',
+    });
+
+    expect(markdown).toContain('![Hero](https://developers.openai.com/images/hero.png)');
+  });
+
+  test('normalizeResourceUrls 应该处理 markdown 链接、图片和 srcset', () => {
+    const service = new MarkdownService({ logger });
+    const markdown = [
+      '![Screenshot](/images/app.webp)',
+      '[Guide](/guides/quickstart)',
+      '<img src="./relative.png" alt="Relative">',
+      '<source srcset="/img-1x.webp 1x, ../img-2x.webp 2x">',
+    ].join('\n');
+
+    const result = service.normalizeResourceUrls(
+      markdown,
+      'https://developers.openai.com/codex/reference/page'
+    );
+
+    expect(result).toContain('![Screenshot](https://developers.openai.com/images/app.webp)');
+    expect(result).toContain('[Guide](https://developers.openai.com/guides/quickstart)');
+    expect(result).toContain('<img src="https://developers.openai.com/codex/reference/relative.png"');
+    expect(result).toContain(
+      '<source srcset="https://developers.openai.com/img-1x.webp 1x, https://developers.openai.com/codex/img-2x.webp 2x">'
+    );
+  });
+
   test('convertHtmlToMarkdown 应该使用 * 而不是 _ 作为强调符号', () => {
     const service = new MarkdownService({ logger });
     const html = '<p>One person said that iterating with Claude has been <em>more</em> fun.</p>';
@@ -157,8 +190,9 @@ describe('MarkdownService', () => {
   test('extractAndConvertPage 应该调用 page.evaluate 并返回 Markdown', async () => {
     const service = new MarkdownService({ logger });
     const page = {
+      url: vi.fn().mockReturnValue('https://developers.openai.com/codex/intro'),
       evaluate: vi.fn(async () => ({
-        html: '<h1>Title</h1><p>Body</p>',
+        html: '<h1>Title</h1><p><img src="/images/body.png" alt="Body"></p>',
         svgCount: 0,
       })),
     };
@@ -167,6 +201,6 @@ describe('MarkdownService', () => {
 
     expect(page.evaluate).toHaveBeenCalledTimes(1);
     expect(markdown).toContain('Title');
-    expect(markdown).toContain('Body');
+    expect(markdown).toContain('![Body](https://developers.openai.com/images/body.png)');
   });
 });

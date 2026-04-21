@@ -409,6 +409,29 @@ describe('PandocPdfService', () => {
       expect(result).toContain('# Real title');
     });
 
+    it('should downgrade webp markdown images to plain links', () => {
+      const input = '![App screenshot](https://developers.openai.com/images/app.webp)';
+      const result = service._cleanMarkdownContent(input);
+
+      expect(result).toBe('[App screenshot](https://developers.openai.com/images/app.webp)');
+    });
+
+    it('should keep images when fm=webp is rewritten to a safe output format', () => {
+      const input =
+        '![Chart](https://cdn.example.com/chart.webp?fm=webp&fit=max)';
+      const result = service._cleanMarkdownContent(input);
+
+      expect(result).toBe('![Chart](https://cdn.example.com/chart.webp?fm=png&fit=max)');
+    });
+
+    it('should downgrade raw html img tags that point to webp assets', () => {
+      const input =
+        '<img src="https://developers.openai.com/images/app.webp" alt="App screenshot">';
+      const result = service._cleanMarkdownContent(input);
+
+      expect(result).toBe('[App screenshot](https://developers.openai.com/images/app.webp)');
+    });
+
     it('should preserve export/import lines inside fenced code blocks', () => {
       // Python example containing `import`, and shell `export VAR=...` must
       // survive because they are inside fenced code blocks.

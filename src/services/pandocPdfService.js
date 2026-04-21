@@ -535,6 +535,68 @@ export class PandocPdfService {
   }
 
   /**
+   * 检查图片 URL 是否是 XeLaTeX/Pandoc 不稳定的格式。
+   * 目前重点处理 webp/avif；如果 URL 已显式请求 png/jpg/jpeg，则认为安全。
+   *
+   * @param {string} url
+   * @returns {boolean}
+   * @private
+   */
+  _isPdfUnsafeImageUrl(url) {
+    if (!url || typeof url !== 'string') return false;
+
+    const lower = url.trim().toLowerCase();
+    if (!lower) return false;
+
+    if (/[?&](?:fm|format)=(?:png|jpg|jpeg|pdf)(?:[&#]|$)/.test(lower)) {
+      return false;
+    }
+
+    return /\.(?:webp|avif)(?:$|[?#])/i.test(lower);
+  }
+
+  /**
+   * 将 PDF 不安全的图片语法降级为普通超链接，避免 Pandoc/XeLaTeX 直接失败。
+   *
+   * @param {string} content
+   * @returns {string}
+   * @private
+   */
+  _downgradePdfUnsafeImages(content) {
+    if (!content) return content;
+
+    let downgraded = content;
+
+    downgraded = downgraded.replace(
+      /!\[([^\]]*)\]\((<)?([^)\n>]+)(>)?((?:\s+["'][^"']*["'])?\s*)\)/g,
+      (match, altText = '', openBracket = '', url, closeBracket = '') => {
+        if (!this._isPdfUnsafeImageUrl(url)) {
+          return match;
+        }
+
+        const label = altText.trim() || 'Image';
+        return `[${label}](${openBracket}${url}${closeBracket})`;
+      }
+    );
+
+    downgraded = downgraded.replace(
+      /<img\b([^>]*?)src=(["'])([^"']+)\2([^>]*)>/gi,
+      (match, before, _quote, src, after) => {
+        if (!this._isPdfUnsafeImageUrl(src)) {
+          return match;
+        }
+
+        const attrs = `${before} ${after}`;
+        const altMatch = attrs.match(/\balt=(["'])(.*?)\1/i);
+        const label = altMatch?.[2]?.trim() || 'Image';
+        return `[${label}](${src})`;
+      }
+    );
+
+    return downgraded;
+  }
+
+  /**
    * 清理 Markdown 内容，修复 Pandoc 不支持的语法
    * @param {string} content
    * @returns {string}
@@ -653,6 +715,9 @@ export class PandocPdfService {
 
     // 5. 将图片 URL 中的 fm=webp 替换为 fm=png（LaTeX 不支持 webp 格式）
     cleaned = cleaned.replace(/fm=webp/g, 'fm=png');
+
+    // 6. 对仍然是 PDF 不安全格式的图片做降级，避免 Pandoc/XeLaTeX 直接失败。
+    cleaned = this._downgradePdfUnsafeImages(cleaned);
 
     return cleaned;
   }
