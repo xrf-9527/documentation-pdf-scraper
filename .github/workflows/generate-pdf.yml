@@ -73,9 +73,9 @@ jobs:
             lmodern
 
       - name: Install latest Pandoc
-        uses: r-lib/actions/setup-pandoc@v2
+        uses: pandoc/actions/setup@v1.1.1
         with:
-          pandoc-version: 'latest'
+          version: 'latest'
 
       - name: Install project dependencies
         run: |
