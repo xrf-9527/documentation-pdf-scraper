@@ -513,6 +513,23 @@ describe('PandocPdfService', () => {
       expect(result.cleanupPaths).toHaveLength(1);
     });
 
+    it('should preserve markdown image titles while extracting only the image url', async () => {
+      const materializeSpy = vi
+        .spyOn(service, '_materializePdfSafeImage')
+        .mockResolvedValue('/tmp/converted/app.png');
+
+      const result = await service._preparePdfImages(
+        '![App screenshot](https://developers.openai.com/images/app.webp "caption")',
+        tempDir
+      );
+
+      expect(materializeSpy).toHaveBeenCalledWith(
+        'https://developers.openai.com/images/app.webp',
+        expect.stringContaining('media-')
+      );
+      expect(result.content).toBe('![App screenshot](/tmp/converted/app.png "caption")');
+    });
+
     it('should downgrade unsafe markdown images to plain links when conversion fails', async () => {
       vi.spyOn(service, '_materializePdfSafeImage').mockRejectedValue(new Error('boom'));
 
@@ -534,6 +551,62 @@ describe('PandocPdfService', () => {
       );
 
       expect(result.content).toBe('![Review pane](/tmp/converted/review.png)');
+    });
+
+    it('should not rewrite markdown or html image examples inside fenced code blocks', async () => {
+      const materializeSpy = vi
+        .spyOn(service, '_materializePdfSafeImage')
+        .mockResolvedValue('/tmp/converted/review.png');
+
+      const input = [
+        '```md',
+        '![Example](https://developers.openai.com/images/example.webp "caption")',
+        '<img src="https://developers.openai.com/images/example-html.webp" alt="HTML example">',
+        '```',
+        '',
+        '<img src="https://developers.openai.com/images/review.webp" alt="Review pane">',
+      ].join('\n');
+
+      const result = await service._preparePdfImages(input, tempDir);
+
+      expect(materializeSpy).toHaveBeenCalledTimes(1);
+      expect(materializeSpy).toHaveBeenCalledWith(
+        'https://developers.openai.com/images/review.webp',
+        expect.stringContaining('media-')
+      );
+      expect(result.content).toBe([
+        '```md',
+        '![Example](https://developers.openai.com/images/example.webp "caption")',
+        '<img src="https://developers.openai.com/images/example-html.webp" alt="HTML example">',
+        '```',
+        '',
+        '![Review pane](/tmp/converted/review.png)',
+      ].join('\n'));
+    });
+  });
+
+  describe('_extractPdfUnsafeImageUrls', () => {
+    it('should extract only the image url when markdown image has an optional title', () => {
+      expect(
+        service._extractPdfUnsafeImageUrls(
+          '![App screenshot](https://developers.openai.com/images/app.webp "caption")'
+        )
+      ).toEqual(['https://developers.openai.com/images/app.webp']);
+    });
+
+    it('should ignore fenced code block image examples', () => {
+      const input = [
+        '```md',
+        '![Example](https://developers.openai.com/images/example.webp)',
+        '<img src="https://developers.openai.com/images/example-html.webp" alt="HTML example">',
+        '```',
+        '',
+        '![Real](https://developers.openai.com/images/real.webp)',
+      ].join('\n');
+
+      expect(service._extractPdfUnsafeImageUrls(input)).toEqual([
+        'https://developers.openai.com/images/real.webp',
+      ]);
     });
   });
 

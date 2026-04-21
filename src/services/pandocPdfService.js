@@ -547,6 +547,437 @@ export class PandocPdfService {
   }
 
   /**
+   * Split markdown into prose/code segments so fenced code block examples can
+   * be preserved verbatim during prose-only rewrites.
+   *
+   * @param {string} content
+   * @returns {{type: 'prose' | 'code', text: string}[]}
+   * @private
+   */
+  _splitFencedCodeBlockSegments(content) {
+    if (typeof content !== 'string' || content.length === 0) {
+      return [];
+    }
+
+    const lines = content.split('\n');
+    const segments = [];
+    let buffer = [];
+    let currentType = 'prose';
+    let inFence = false;
+    let fenceChar = '';
+    let fenceCount = 0;
+
+    const flush = () => {
+      if (buffer.length === 0) return;
+      segments.push({ type: currentType, text: buffer.join('\n') });
+      buffer = [];
+    };
+
+    for (const line of lines) {
+      const fenceMatch = line.match(/^\s*>?\s*(`{3,}|~{3,})(.*)$/);
+
+      if (!inFence && fenceMatch) {
+        flush();
+        inFence = true;
+        currentType = 'code';
+        fenceChar = fenceMatch[1][0];
+        fenceCount = fenceMatch[1].length;
+        buffer.push(line);
+        continue;
+      }
+
+      if (
+        inFence &&
+        fenceMatch &&
+        fenceMatch[1][0] === fenceChar &&
+        fenceMatch[1].length >= fenceCount &&
+        fenceMatch[2].trim() === ''
+      ) {
+        buffer.push(line);
+        flush();
+        inFence = false;
+        currentType = 'prose';
+        fenceChar = '';
+        fenceCount = 0;
+        continue;
+      }
+
+      buffer.push(line);
+    }
+
+    flush();
+    return segments;
+  }
+
+  /**
+   * Apply a transform only to prose segments outside fenced code blocks.
+   *
+   * @param {string} content
+   * @param {(segment: string) => string} transform
+   * @returns {string}
+   * @private
+   */
+  _mapProseSegments(content, transform) {
+    if (!content) return content;
+
+    const segments = this._splitFencedCodeBlockSegments(content);
+    if (segments.length === 0) return content;
+
+    return segments
+      .map((segment) => (segment.type === 'prose' ? transform(segment.text) : segment.text))
+      .join('\n');
+  }
+
+  /**
+   * Find the closing `]` for an image alt text while honoring nested brackets
+   * and backslash escapes.
+   *
+   * @param {string} content
+   * @param {number} openBracketIndex
+   * @returns {number}
+   * @private
+   */
+  _findClosingMarkdownBracket(content, openBracketIndex) {
+    let depth = 1;
+
+    for (let i = openBracketIndex + 1; i < content.length; i++) {
+      if (content[i] === '\\') {
+        i++;
+        continue;
+      }
+
+      if (content[i] === '[') {
+        depth++;
+      } else if (content[i] === ']') {
+        depth--;
+        if (depth === 0) {
+          return i;
+        }
+      }
+    }
+
+    return -1;
+  }
+
+  /**
+   * Parse the destination/title portion of `![alt](...)` without greedily
+   * swallowing optional title text.
+   *
+   * @param {string} content
+   * @param {number} openParenIndex
+   * @returns {{end: number, url: string, destinationSource: string, titleSource: string}|null}
+   * @private
+   */
+  _parseMarkdownImageTarget(content, openParenIndex) {
+    let i = openParenIndex + 1;
+    let depth = 1;
+    let inQuote = '';
+    let inAngle = false;
+
+    while (i < content.length) {
+      const char = content[i];
+
+      if (char === '\\') {
+        i += 2;
+        continue;
+      }
+
+      if (inQuote) {
+        if (char === inQuote) {
+          inQuote = '';
+        }
+        i++;
+        continue;
+      }
+
+      if (inAngle) {
+        if (char === '>') {
+          inAngle = false;
+        }
+        i++;
+        continue;
+      }
+
+      if (char === '<') {
+        inAngle = true;
+      } else if (char === '"' || char === "'") {
+        inQuote = char;
+      } else if (char === '(') {
+        depth++;
+      } else if (char === ')') {
+        depth--;
+        if (depth === 0) {
+          break;
+        }
+      }
+
+      i++;
+    }
+
+    if (depth !== 0) {
+      return null;
+    }
+
+    const inner = content.slice(openParenIndex + 1, i);
+    const parsed = this._parseMarkdownImageTargetBody(inner);
+    if (!parsed?.url) {
+      return null;
+    }
+
+    return { end: i, ...parsed };
+  }
+
+  /**
+   * Parse the inside of `![alt](...)` into destination and optional title.
+   *
+   * @param {string} targetBody
+   * @returns {{url: string, destinationSource: string, titleSource: string}|null}
+   * @private
+   */
+  _parseMarkdownImageTargetBody(targetBody) {
+    let i = 0;
+
+    while (i < targetBody.length && /\s/.test(targetBody[i])) {
+      i++;
+    }
+
+    if (i >= targetBody.length) {
+      return null;
+    }
+
+    const destinationStart = i;
+    let destinationSource = '';
+    let url = '';
+
+    if (targetBody[i] === '<') {
+      i++;
+      const urlStart = i;
+
+      while (i < targetBody.length) {
+        if (targetBody[i] === '\\') {
+          i += 2;
+          continue;
+        }
+        if (targetBody[i] === '>') {
+          break;
+        }
+        i++;
+      }
+
+      if (i >= targetBody.length || targetBody[i] !== '>') {
+        return null;
+      }
+
+      destinationSource = targetBody.slice(destinationStart, i + 1);
+      url = targetBody.slice(urlStart, i);
+      i++;
+    } else {
+      let parenDepth = 0;
+
+      while (i < targetBody.length) {
+        const char = targetBody[i];
+
+        if (char === '\\') {
+          i += 2;
+          continue;
+        }
+
+        if (/\s/.test(char) && parenDepth === 0) {
+          break;
+        }
+
+        if (char === '(') {
+          parenDepth++;
+        } else if (char === ')' && parenDepth > 0) {
+          parenDepth--;
+        }
+
+        i++;
+      }
+
+      destinationSource = targetBody.slice(destinationStart, i);
+      url = destinationSource.trim();
+    }
+
+    if (!url) {
+      return null;
+    }
+
+    const remainder = targetBody.slice(i).trim();
+    if (!remainder) {
+      return { url, destinationSource, titleSource: '' };
+    }
+
+    const titleSource = this._parseMarkdownTitleSource(remainder);
+    return { url, destinationSource, titleSource };
+  }
+
+  /**
+   * Parse a valid markdown title suffix (`"..."`, `'...'`, or `(...)`).
+   *
+   * @param {string} remainder
+   * @returns {string}
+   * @private
+   */
+  _parseMarkdownTitleSource(remainder) {
+    const opener = remainder[0];
+    const closer = opener === '(' ? ')' : opener === '"' ? '"' : opener === "'" ? "'" : '';
+
+    if (!closer) {
+      return '';
+    }
+
+    let i = 1;
+    while (i < remainder.length) {
+      if (remainder[i] === '\\') {
+        i += 2;
+        continue;
+      }
+
+      if (remainder[i] === closer) {
+        return remainder.slice(i + 1).trim() === '' ? remainder.slice(0, i + 1) : '';
+      }
+
+      i++;
+    }
+
+    return '';
+  }
+
+  /**
+   * Collect markdown image references from prose content.
+   *
+   * @param {string} content
+   * @returns {Array<{type: 'markdown', start: number, end: number, altText: string, url: string, destinationSource: string, titleSource: string}>}
+   * @private
+   */
+  _collectMarkdownImageReferences(content) {
+    if (!content) return [];
+
+    const references = [];
+
+    for (let i = 0; i < content.length - 1; i++) {
+      if (content[i] !== '!' || content[i + 1] !== '[') {
+        continue;
+      }
+
+      const altOpenIndex = i + 1;
+      const altCloseIndex = this._findClosingMarkdownBracket(content, altOpenIndex);
+      if (altCloseIndex === -1 || content[altCloseIndex + 1] !== '(') {
+        continue;
+      }
+
+      const parsedTarget = this._parseMarkdownImageTarget(content, altCloseIndex + 1);
+      if (!parsedTarget) {
+        continue;
+      }
+
+      references.push({
+        type: 'markdown',
+        start: i,
+        end: parsedTarget.end + 1,
+        altText: content.slice(i + 2, altCloseIndex),
+        url: parsedTarget.url,
+        destinationSource: parsedTarget.destinationSource,
+        titleSource: parsedTarget.titleSource,
+      });
+
+      i = parsedTarget.end;
+    }
+
+    return references;
+  }
+
+  /**
+   * Collect raw HTML <img> references from prose content.
+   *
+   * @param {string} content
+   * @returns {Array<{type: 'html', start: number, end: number, altText: string, url: string}>}
+   * @private
+   */
+  _collectHtmlImageReferences(content) {
+    if (!content) return [];
+
+    const references = [];
+
+    for (const match of content.matchAll(/<img\b([^>]*?)src=(["'])([^"']+)\2([^>]*)>/gi)) {
+      const start = match.index ?? 0;
+      const attrs = `${match[1]} ${match[4]}`;
+      const altMatch = attrs.match(/\balt=(["'])(.*?)\1/i);
+
+      references.push({
+        type: 'html',
+        start,
+        end: start + match[0].length,
+        altText: altMatch?.[2]?.trim() || 'Image',
+        url: match[3],
+      });
+    }
+
+    return references;
+  }
+
+  /**
+   * Collect remote image references from prose content only.
+   *
+   * @param {string} content
+   * @returns {Array}
+   * @private
+   */
+  _collectRemoteImageReferencesFromProse(content) {
+    return [
+      ...this._collectMarkdownImageReferences(content),
+      ...this._collectHtmlImageReferences(content),
+    ].filter((reference) => this._isRemoteImageUrl(reference.url));
+  }
+
+  /**
+   * Rewrite remote image references in prose while preserving fenced code
+   * blocks verbatim.
+   *
+   * @param {string} content
+   * @param {Map<string, string|null>} resolvedUrls
+   * @returns {string}
+   * @private
+   */
+  _rewritePdfImagesInProse(content, resolvedUrls) {
+    const references = this._collectRemoteImageReferencesFromProse(content);
+    if (references.length === 0) {
+      return content;
+    }
+
+    let rewritten = content;
+
+    references
+      .sort((a, b) => b.start - a.start)
+      .forEach((reference) => {
+        const localPath = resolvedUrls.get(reference.url);
+        let replacement;
+
+        if (reference.type === 'markdown') {
+          if (localPath) {
+            replacement =
+              `![${reference.altText}](${localPath}` +
+              `${reference.titleSource ? ` ${reference.titleSource}` : ''})`;
+          } else {
+            const label = reference.altText.trim() || 'Image';
+            replacement =
+              `[${label}](${reference.destinationSource}` +
+              `${reference.titleSource ? ` ${reference.titleSource}` : ''})`;
+          }
+        } else if (localPath) {
+          replacement = `![${reference.altText}](${localPath})`;
+        } else {
+          replacement = `[${reference.altText}](${reference.url})`;
+        }
+
+        rewritten = rewritten.slice(0, reference.start) + replacement + rewritten.slice(reference.end);
+      });
+
+    return rewritten;
+  }
+
+  /**
    * 检查图片 URL 是否是 XeLaTeX/Pandoc 不稳定的格式。
    * XeLaTeX 原生更适合 png/jpg/pdf；webp/avif/gif/svg 需要额外处理。
    *
@@ -648,43 +1079,8 @@ export class PandocPdfService {
       }
     }
 
-    let prepared = content;
-
-    prepared = prepared.replace(
-      /!\[([^\]]*)\]\((<)?([^)\n>]+)(>)?((?:\s+["'][^"']*["'])?\s*)\)/g,
-      (match, altText = '', openBracket = '', url, closeBracket = '') => {
-        if (!this._isRemoteImageUrl(url)) {
-          return match;
-        }
-
-        const localPath = resolvedUrls.get(url);
-        if (localPath) {
-          return `![${altText}](${localPath})`;
-        }
-
-        const label = altText.trim() || 'Image';
-        return `[${label}](${openBracket}${url}${closeBracket})`;
-      }
-    );
-
-    prepared = prepared.replace(
-      /<img\b([^>]*?)src=(["'])([^"']+)\2([^>]*)>/gi,
-      (match, before, _quote, src, after) => {
-        if (!this._isRemoteImageUrl(src)) {
-          return match;
-        }
-
-        const localPath = resolvedUrls.get(src);
-        const attrs = `${before} ${after}`;
-        const altMatch = attrs.match(/\balt=(["'])(.*?)\1/i);
-        const label = altMatch?.[2]?.trim() || 'Image';
-
-        if (localPath) {
-          return `![${label}](${localPath})`;
-        }
-
-        return `[${label}](${src})`;
-      }
+    const prepared = this._mapProseSegments(content, (segment) =>
+      this._rewritePdfImagesInProse(segment, resolvedUrls)
     );
 
     return { content: prepared, cleanupPaths };
@@ -702,17 +1098,13 @@ export class PandocPdfService {
 
     const urls = new Set();
 
-    for (const match of content.matchAll(/!\[[^\]]*]\((<)?([^)\n>]+)(>)?((?:\s+["'][^"']*["'])?\s*)\)/g)) {
-      const url = match[2];
-      if (this._isRemoteImageUrl(url)) {
-        urls.add(url);
+    for (const segment of this._splitFencedCodeBlockSegments(content)) {
+      if (segment.type !== 'prose') {
+        continue;
       }
-    }
 
-    for (const match of content.matchAll(/<img\b[^>]*?\bsrc=(["'])([^"']+)\1[^>]*>/gi)) {
-      const url = match[2];
-      if (this._isRemoteImageUrl(url)) {
-        urls.add(url);
+      for (const reference of this._collectRemoteImageReferencesFromProse(segment.text)) {
+        urls.add(reference.url);
       }
     }
 
