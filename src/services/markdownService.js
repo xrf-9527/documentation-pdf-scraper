@@ -84,6 +84,121 @@ export class MarkdownService {
   }
 
   /**
+   * 将相对资源 URL 规范化为绝对 URL，避免 Pandoc 在 PDF 阶段把站点内资源
+   * 误当成本地文件路径处理（例如 `/images/...`）。
+   *
+   * @param {string} markdown
+   * @param {string} pageUrl
+   * @returns {string}
+   */
+  normalizeResourceUrls(markdown, pageUrl) {
+    if (!markdown || typeof markdown !== 'string' || !pageUrl) {
+      return markdown;
+    }
+
+    let normalized = markdown;
+
+    // Markdown links/images: ![alt](/img.png) / [text](/guide)
+    normalized = normalized.replace(
+      /(!?\[[^\]]*]\(\s*)(<)?((?:\/{1,2}|\.{1,2}\/)[^)\s>]+(?:\?[^)\s>]*)?(?:#[^)\s>]*)?)(>)?((?:\s+["'][^"']*["'])?\s*\))/g,
+      (match, prefix, openBracket = '', target, closeBracket = '', suffix) => {
+        const resolved = this._resolveResourceUrl(target, pageUrl);
+        return resolved ? `${prefix}${openBracket}${resolved}${closeBracket}${suffix}` : match;
+      }
+    );
+
+    // Raw HTML img/a tags embedded in markdown.
+    normalized = normalized.replace(
+      /(<(?:img|a)\b[^>]*?\b(?:src|href)=["'])([^"']+)(["'][^>]*>)/gi,
+      (match, prefix, target, suffix) => {
+        const resolved = this._resolveResourceUrl(target, pageUrl);
+        return resolved ? `${prefix}${resolved}${suffix}` : match;
+      }
+    );
+
+    // Raw HTML source tags with srcset, e.g. <source srcset="/foo.webp 1x, /bar.webp 2x">
+    normalized = normalized.replace(
+      /(<source\b[^>]*?\bsrcset=["'])([^"']+)(["'][^>]*>)/gi,
+      (match, prefix, srcset, suffix) => {
+        const resolved = this._resolveSrcset(srcset, pageUrl);
+        return resolved ? `${prefix}${resolved}${suffix}` : match;
+      }
+    );
+
+    return normalized;
+  }
+
+  /**
+   * 将单个相对 URL 解析为绝对 URL。
+   *
+   * @param {string} target
+   * @param {string} pageUrl
+   * @returns {string}
+   * @private
+   */
+  _resolveResourceUrl(target, pageUrl) {
+    if (!target || typeof target !== 'string' || !pageUrl) {
+      return target;
+    }
+
+    const trimmed = target.trim();
+    if (!trimmed) return target;
+
+    // 已经是绝对 URL、锚点、内联数据或非网页协议时不处理。
+    if (/^(?:[a-z][a-z\d+.-]*:|#)/i.test(trimmed)) {
+      return trimmed;
+    }
+
+    const isRelativePath =
+      trimmed.startsWith('/') ||
+      trimmed.startsWith('./') ||
+      trimmed.startsWith('../') ||
+      trimmed.startsWith('//');
+
+    if (!isRelativePath) {
+      return trimmed;
+    }
+
+    try {
+      return new URL(trimmed, pageUrl).toString();
+    } catch (error) {
+      this.logger?.debug?.('资源 URL 规范化失败，保留原值', {
+        pageUrl,
+        target: trimmed,
+        error: error.message,
+      });
+      return trimmed;
+    }
+  }
+
+  /**
+   * 解析 srcset 中的多个资源 URL。
+   *
+   * @param {string} srcset
+   * @param {string} pageUrl
+   * @returns {string}
+   * @private
+   */
+  _resolveSrcset(srcset, pageUrl) {
+    if (!srcset || typeof srcset !== 'string') {
+      return srcset;
+    }
+
+    return srcset
+      .split(',')
+      .map((entry) => {
+        const trimmed = entry.trim();
+        if (!trimmed) return trimmed;
+
+        const [target, ...descriptors] = trimmed.split(/\s+/);
+        const resolved = this._resolveResourceUrl(target, pageUrl);
+
+        return [resolved, ...descriptors].join(' ').trim();
+      })
+      .join(', ');
+  }
+
+  /**
    * 规范化图像与图注：
    * - 如果某行是斜体（例如 _Figure 1: ..._ 或 *Figure 1: ...*），
    * - 且其前一行（忽略空行）是 Markdown 图片行，并且两者文本几乎相同，
@@ -169,7 +284,8 @@ export class MarkdownService {
 
     try {
       const rawMarkdown = this.turndown.turndown(html);
-      const markdown = this._normalizeFigureCaptions(rawMarkdown);
+      const normalizedMarkdown = this.normalizeResourceUrls(rawMarkdown, options.pageUrl);
+      const markdown = this._normalizeFigureCaptions(normalizedMarkdown);
       this.logger?.debug?.('HTML 转 Markdown 完成', {
         length: markdown.length,
         ...options.debugMeta,
@@ -189,6 +305,7 @@ export class MarkdownService {
    * @returns {Promise<string>}
    */
   async extractAndConvertPage(page, selector) {
+    const pageUrl = typeof page.url === 'function' ? page.url() : undefined;
     const { html, svgCount } = await page.evaluate((contentSelector) => {
       const container = document.querySelector(contentSelector);
       if (!container) {
@@ -245,7 +362,10 @@ export class MarkdownService {
       svgCount,
     });
 
-    return this.convertHtmlToMarkdown(html, { debugMeta: { svgCount } });
+    return this.convertHtmlToMarkdown(html, {
+      debugMeta: { svgCount },
+      pageUrl,
+    });
   }
 
   /**

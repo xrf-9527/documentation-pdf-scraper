@@ -1297,7 +1297,7 @@ export class Scraper extends EventEmitter {
           if (this.config.markdownSource?.enabled) {
             const mdSource = await this._fetchMarkdownSource(url);
             if (mdSource) {
-              markdownContent = mdSource.content;
+              markdownContent = this.markdownService.normalizeResourceUrls(mdSource.content, url);
               sourceTitle = mdSource.title;
               this.logger.info('使用直接获取的 Markdown 源文件', {
                 url,
