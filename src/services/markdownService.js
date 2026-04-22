@@ -959,14 +959,27 @@ export class MarkdownService {
     if (!markdown) return markdown;
 
     const strippedPair = markdown.replace(
-      /\[\s*Previous[\s\S]*?]\([^)]+\)\s*\[\s*Next[\s\S]*?]\([^)]+\)\s*$/m,
+      /\[\s*Previous(?:\s|\n)[\s\S]*?]\([^)]+\)\s*\[\s*Next(?:\s|\n)[\s\S]*?]\([^)]+\)\s*$/,
       ''
     );
 
-    return strippedPair.replace(
-      /\[\s*(?:Previous|Next)\s*[\s\S]*?]\([^)]+\)\s*$/m,
-      ''
-    );
+    return strippedPair.replace(/(^|\n)\[\s*([\s\S]*?)\]\([^)]+\)\s*$/, (match, prefix, label) => {
+      const labelLines = String(label)
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean);
+
+      if (labelLines.length === 0) {
+        return match;
+      }
+
+      const firstLine = labelLines[0].toLowerCase();
+      if (firstLine === 'previous' || firstLine === 'next') {
+        return prefix;
+      }
+
+      return match;
+    });
   }
 
   /**

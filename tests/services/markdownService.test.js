@@ -164,6 +164,28 @@ describe('MarkdownService', () => {
     expect(result).not.toContain('Automations');
   });
 
+  test('sanitizeMarkdown 不应误删正文里的 Next.js 链接', () => {
+    const service = new MarkdownService({ logger });
+    const markdown = [
+      'See [Next.js setup](https://developers.openai.com/codex/setup-nextjs) for framework-specific instructions.',
+      '',
+      '[',
+      '',
+      'Next',
+      '',
+      'Automations',
+      '',
+      '](/codex/app/automations)',
+    ].join('\n');
+
+    const result = service.sanitizeMarkdown(markdown, {
+      pageUrl: 'https://developers.openai.com/codex/app/review',
+    });
+
+    expect(result).toContain('[Next.js setup](https://developers.openai.com/codex/setup-nextjs)');
+    expect(result).not.toContain('Automations');
+  });
+
   test('sanitizeMarkdown 应该对 Quickstart 的页签摘要做兜底格式化', () => {
     const service = new MarkdownService({ logger });
     const markdown =
