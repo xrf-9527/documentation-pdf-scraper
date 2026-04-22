@@ -17,6 +17,7 @@ export class PandocPdfService {
     this.logger = options.logger;
     this.config = options.config || {};
     this.pandocBinary = options.pandocBinary || 'pandoc';
+    this.latexBinary = options.latexBinary || 'xelatex';
     this.metadataService = options.metadataService || null;
   }
 
@@ -120,12 +121,78 @@ export class PandocPdfService {
    * @private
    */
   async _runPandoc(inputPath, outputPath, options = {}) {
-    const args = this._buildPandocArgs(inputPath, outputPath, options);
+    const tempDir = path.dirname(inputPath) || process.cwd();
+    const headerIncludePath = this._createPandocHeaderFile(tempDir);
+    const latexWorkDir = fs.mkdtempSync(path.join(tempDir, 'pandoc-latex-'));
+    const latexInputPath = path.join(latexWorkDir, 'input.tex');
+    const latexOutputPath = path.join(latexWorkDir, 'input.pdf');
+    const args = this._buildPandocLatexArgs(inputPath, latexInputPath, {
+      ...options,
+      headerIncludePath,
+    });
+
+    return (async () => {
+      await this._runExternalCommand(this.pandocBinary, args, {
+        failureLabel: 'Pandoc 转换失败',
+        timeoutMs: 120000,
+      });
+
+      await this._runXeLatex(latexInputPath, latexWorkDir);
+      await this._runXeLatex(latexInputPath, latexWorkDir);
+
+      if (!fs.existsSync(latexOutputPath)) {
+        throw new Error('PDF 文件未生成');
+      }
+
+      fs.copyFileSync(latexOutputPath, outputPath);
+    })().finally(() => {
+      try {
+        fs.unlinkSync(headerIncludePath);
+      } catch {
+        // Ignore cleanup errors
+      }
+
+      try {
+        fs.rmSync(latexWorkDir, { recursive: true, force: true });
+      } catch {
+        // Ignore cleanup errors
+      }
+    });
+  }
+
+  /**
+   * 运行一个外部命令并在失败时附带 stderr，便于定位 Pandoc / XeLaTeX 问题。
+   *
+   * @param {string} command
+   * @param {string[]} args
+   * @param {{ failureLabel: string, timeoutMs?: number }} options
+   * @returns {Promise<{stdout: string, stderr: string}>}
+   * @private
+   */
+  async _runExternalCommand(command, args, options = {}) {
+    const { failureLabel = '外部命令执行失败', timeoutMs = 300000 } = options;
 
     return new Promise((resolve, reject) => {
-      const child = spawn(this.pandocBinary, args);
+      const child = spawn(command, args);
       let stdout = '';
       let stderr = '';
+      let settled = false;
+      const timeoutId = setTimeout(() => {
+        if (settled) return;
+
+        child.kill('SIGTERM');
+        settled = true;
+        reject(new Error(`${failureLabel}: timed out after ${timeoutMs}ms`));
+      }, timeoutMs);
+
+      timeoutId.unref?.();
+
+      const finish = (handler) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeoutId);
+        handler();
+      };
 
       child.stdout.on('data', (data) => {
         stdout += data.toString();
@@ -136,33 +203,53 @@ export class PandocPdfService {
       });
 
       child.on('close', (code) => {
-        if (code !== 0) {
-          const error = new Error(`Pandoc exited with code ${code}: ${stderr}`);
-          this.logger?.error?.('Pandoc 转换失败', {
-            code,
-            stderr: stderr.substring(0, 500),
-            stdout: stdout.substring(0, 500),
+        finish(() => {
+          if (code !== 0) {
+            this.logger?.error?.(failureLabel, {
+              code,
+              stderr: stderr.substring(0, 500),
+              stdout: stdout.substring(0, 500),
+            });
+            reject(new Error(`${failureLabel}: ${stderr || stdout || `exit code ${code}`}`));
+            return;
+          }
+
+          resolve({ stdout, stderr });
+        });
+      });
+
+      child.on('error', (error) => {
+        finish(() => {
+          this.logger?.error?.(`${failureLabel} spawn 错误`, {
+            error: error.message,
           });
           reject(error);
-          return;
-        }
-
-        // 检查输出文件是否存在
-        if (!fs.existsSync(outputPath)) {
-          reject(new Error('PDF 文件未生成'));
-          return;
-        }
-
-        resolve();
-      });
-
-      child.on('error', (err) => {
-        this.logger?.error?.('Pandoc spawn 错误', {
-          error: err.message,
         });
-        reject(err);
       });
     });
+  }
+
+  /**
+   * 显式运行 XeLaTeX，确保 TOC / 引用在多轮编译中稳定收敛。
+   *
+   * @param {string} inputPath
+   * @param {string} outputDir
+   * @returns {Promise<void>}
+   * @private
+   */
+  async _runXeLatex(inputPath, outputDir) {
+    await this._runExternalCommand(
+      this.latexBinary,
+      [
+        '-halt-on-error',
+        '-interaction=nonstopmode',
+        `-output-directory=${outputDir}`,
+        inputPath,
+      ],
+      {
+        failureLabel: 'XeLaTeX 转换失败',
+      }
+    );
   }
 
   /**
@@ -1127,6 +1214,12 @@ export class PandocPdfService {
     fs.mkdirSync(mediaDir, { recursive: true });
 
     const digest = createHash('sha256').update(url).digest('hex').slice(0, 24);
+    const outputPath = path.join(mediaDir, `${digest}.png`);
+
+    if (fs.existsSync(outputPath)) {
+      return outputPath;
+    }
+
     const response = await fetch(url, {
       headers: {
         'user-agent': 'documentation-pdf-scraper/1.0',
@@ -1139,21 +1232,24 @@ export class PandocPdfService {
     }
 
     const contentType = response.headers.get('content-type') || '';
-    const sourceExtension = this._getImageExtensionFromUrl(url, contentType);
+    const buffer = Buffer.from(await response.arrayBuffer());
+    const detectedFormat = this._detectDownloadedImageFormat(buffer, contentType);
+    const sourceExtension = this._getImageExtensionFromUrl(url, contentType, detectedFormat);
     const sourcePath = path.join(mediaDir, `${digest}${sourceExtension}`);
-    const outputPath = path.join(mediaDir, `${digest}.png`);
+    const shouldConvert = this._shouldConvertDownloadedImage(url, contentType, detectedFormat);
 
-    if (fs.existsSync(outputPath)) {
+    if (fs.existsSync(sourcePath)) {
+      if (!shouldConvert) {
+        return sourcePath;
+      }
+
+      await this._convertImageToPng(sourcePath, outputPath);
       return outputPath;
     }
-    if (fs.existsSync(sourcePath) && !this._shouldConvertDownloadedImage(url, contentType)) {
-      return sourcePath;
-    }
 
-    const buffer = Buffer.from(await response.arrayBuffer());
     await fs.promises.writeFile(sourcePath, buffer);
 
-    if (!this._shouldConvertDownloadedImage(url, contentType)) {
+    if (!shouldConvert) {
       return sourcePath;
     }
 
@@ -1180,8 +1276,26 @@ export class PandocPdfService {
    * @returns {boolean}
    * @private
    */
-  _shouldConvertDownloadedImage(url, contentType = '') {
+  _shouldConvertDownloadedImage(url, contentType = '', detectedFormat = '') {
+    const normalizedFormat = detectedFormat.toLowerCase();
     const normalizedType = contentType.toLowerCase();
+
+    if (normalizedFormat === 'png' || normalizedFormat === 'jpg' || normalizedFormat === 'jpeg') {
+      return false;
+    }
+
+    if (normalizedFormat === 'pdf') {
+      return false;
+    }
+
+    if (
+      normalizedFormat === 'webp'
+      || normalizedFormat === 'avif'
+      || normalizedFormat === 'gif'
+      || normalizedFormat === 'svg'
+    ) {
+      return true;
+    }
 
     if (normalizedType.includes('image/png') || normalizedType.includes('image/jpeg')) {
       return false;
@@ -1197,6 +1311,80 @@ export class PandocPdfService {
     if (normalizedType.includes('image/svg+xml')) return true;
 
     return this._isPdfUnsafeImageUrl(url);
+  }
+
+  /**
+   * 根据真实下载内容识别图片格式，避免仅靠 URL 或响应头做脆弱判断。
+   *
+   * @param {Buffer} buffer
+   * @param {string} contentType
+   * @returns {string}
+   * @private
+   */
+  _detectDownloadedImageFormat(buffer, contentType = '') {
+    if (Buffer.isBuffer(buffer) && buffer.length > 0) {
+      if (
+        buffer.length >= 8
+        && buffer[0] === 0x89
+        && buffer[1] === 0x50
+        && buffer[2] === 0x4e
+        && buffer[3] === 0x47
+        && buffer[4] === 0x0d
+        && buffer[5] === 0x0a
+        && buffer[6] === 0x1a
+        && buffer[7] === 0x0a
+      ) {
+        return 'png';
+      }
+
+      if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+        return 'jpg';
+      }
+
+      const leadingAscii = buffer.subarray(0, Math.min(buffer.length, 512)).toString('utf8');
+      const trimmedLeadingAscii = leadingAscii.replace(/^\uFEFF/, '').trimStart().toLowerCase();
+
+      if (trimmedLeadingAscii.includes('<svg')) {
+        return 'svg';
+      }
+
+      if (buffer.length >= 6) {
+        const gifSignature = buffer.subarray(0, 6).toString('ascii');
+        if (gifSignature === 'GIF87a' || gifSignature === 'GIF89a') {
+          return 'gif';
+        }
+      }
+
+      if (
+        buffer.length >= 12
+        && buffer.subarray(0, 4).toString('ascii') === 'RIFF'
+        && buffer.subarray(8, 12).toString('ascii') === 'WEBP'
+      ) {
+        return 'webp';
+      }
+
+      if (buffer.length >= 5 && buffer.subarray(0, 5).toString('ascii') === '%PDF-') {
+        return 'pdf';
+      }
+
+      if (buffer.length >= 12 && buffer.subarray(4, 8).toString('ascii') === 'ftyp') {
+        const brand = buffer.subarray(8, 12).toString('ascii');
+        if (brand === 'avif' || brand === 'avis') {
+          return 'avif';
+        }
+      }
+    }
+
+    const normalizedType = contentType.toLowerCase();
+    if (normalizedType.includes('image/png')) return 'png';
+    if (normalizedType.includes('image/jpeg')) return 'jpg';
+    if (normalizedType.includes('image/webp')) return 'webp';
+    if (normalizedType.includes('image/avif')) return 'avif';
+    if (normalizedType.includes('image/gif')) return 'gif';
+    if (normalizedType.includes('image/svg+xml')) return 'svg';
+    if (normalizedType.includes('application/pdf')) return 'pdf';
+
+    return '';
   }
 
   /**
@@ -1241,8 +1429,17 @@ export class PandocPdfService {
    * @returns {string}
    * @private
    */
-  _getImageExtensionFromUrl(url, contentType = '') {
+  _getImageExtensionFromUrl(url, contentType = '', detectedFormat = '') {
+    const normalizedFormat = detectedFormat.toLowerCase();
     const normalizedType = contentType.toLowerCase();
+    if (normalizedFormat === 'png') return '.png';
+    if (normalizedFormat === 'jpg' || normalizedFormat === 'jpeg') return '.jpg';
+    if (normalizedFormat === 'webp') return '.webp';
+    if (normalizedFormat === 'avif') return '.avif';
+    if (normalizedFormat === 'gif') return '.gif';
+    if (normalizedFormat === 'svg') return '.svg';
+    if (normalizedFormat === 'pdf') return '.pdf';
+
     if (normalizedType.includes('image/png')) return '.png';
     if (normalizedType.includes('image/jpeg')) return '.jpg';
     if (normalizedType.includes('image/webp')) return '.webp';
@@ -1262,6 +1459,41 @@ export class PandocPdfService {
     } catch {
       return '.img';
     }
+  }
+
+  /**
+   * 通过临时 header 文件注入 LaTeX 配置，避免 Pandoc 对 header-includes
+   * 变量做额外转义，导致 `\\usepackage` 之类的坏输出。
+   *
+   * @returns {string}
+   * @private
+   */
+  _getPandocHeaderContent() {
+    return String.raw`\usepackage{fvextra}
+\RecustomVerbatimEnvironment{verbatim}{Verbatim}{breaklines,breakanywhere,fontsize=\small}
+\DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines,breakanywhere,fontsize=\small,commandchars=\\\{\}}
+\usepackage{xurl}
+`;
+  }
+
+  /**
+   * 创建 Pandoc 头文件，供 --include-in-header 使用。
+   *
+   * @param {string} tempDir
+   * @returns {string}
+   * @private
+   */
+  _createPandocHeaderFile(tempDir) {
+    fs.mkdirSync(tempDir, { recursive: true });
+
+    const headerPath = path.join(
+      tempDir,
+      `pandoc-header-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.tex`
+    );
+
+    fs.writeFileSync(headerPath, this._getPandocHeaderContent(), 'utf8');
+
+    return headerPath;
   }
 
   /**
@@ -1411,9 +1643,11 @@ export class PandocPdfService {
       `CJKmainfont=${cjkMainFont}`, // 主字体（使用 CI 可用的开源字体，支持通过配置覆盖）
       '--variable',
       'geometry:margin=1in', // 页边距
-      '--variable',
-      'header-includes=\\usepackage{fvextra} \\DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines,breakanywhere,fontsize=\\\\small,commandchars=\\\\\\{\\}} \\usepackage{xurl}', // 启用代码换行(支持任意位置)、缩小代码字号并增强 URL 换行。不再使用 ltablex 防止表格溢出
     ];
+
+    if (markdownPdfConfig.headerIncludePath) {
+      args.push('--include-in-header', markdownPdfConfig.headerIncludePath);
+    }
 
     // 添加其他选项
     const pdfOptions = markdownPdfConfig.pdfOptions || {};
@@ -1442,6 +1676,25 @@ export class PandocPdfService {
       const style = highlightStyle === 'github' ? 'pygments' : highlightStyle;
       args.push('--highlight-style', style);
     }
+
+    return args;
+  }
+
+  /**
+   * 构建 Pandoc -> LaTeX 的命令行参数。
+   *
+   * @param {string} inputPath
+   * @param {string} outputPath
+   * @param {Object} options
+   * @returns {string[]}
+   * @private
+   */
+  _buildPandocLatexArgs(inputPath, outputPath, options = {}) {
+    const args = this._buildPandocArgs(inputPath, outputPath, options).filter(
+      (arg) => arg !== '--pdf-engine=xelatex'
+    );
+
+    args.push('--standalone', '--to=latex');
 
     return args;
   }
