@@ -15,6 +15,7 @@ describe('StateManager', () => {
     mockFileService = {
       readJson: vi.fn(),
       writeJson: vi.fn(),
+      exists: vi.fn(),
     };
 
     mockPathService = {
@@ -300,6 +301,46 @@ describe('StateManager', () => {
 
       expect(stateManager.isProcessed('http://example.com')).toBe(true);
       expect(stateManager.isProcessed('http://other.com')).toBe(false);
+    });
+
+    test('hasValidProcessedOutput应该在输出文件存在时返回true', async () => {
+      stateManager.state.processedUrls.add('http://example.com');
+      stateManager.state.urlToFile.set('http://example.com', '/path/to/file.pdf');
+      mockFileService.exists.mockResolvedValue(true);
+
+      await expect(stateManager.hasValidProcessedOutput('http://example.com')).resolves.toBe(true);
+      expect(mockFileService.exists).toHaveBeenCalledWith('/path/to/file.pdf');
+    });
+
+    test('hasValidProcessedOutput应该在缺少输出映射时清理脏状态', async () => {
+      stateManager.state.processedUrls.add('http://example.com');
+
+      await expect(stateManager.hasValidProcessedOutput('http://example.com')).resolves.toBe(
+        false
+      );
+      expect(stateManager.state.processedUrls.has('http://example.com')).toBe(false);
+      expect(mockLogger.warn).toHaveBeenCalledWith('已处理URL缺少输出文件映射，按未处理恢复', {
+        url: 'http://example.com',
+      });
+    });
+
+    test('hasValidProcessedOutput应该在输出文件缺失时清理脏状态', async () => {
+      stateManager.state.processedUrls.add('http://example.com');
+      stateManager.state.urlToFile.set('http://example.com', '/path/to/file.pdf');
+      mockFileService.exists.mockResolvedValue(false);
+
+      await expect(stateManager.hasValidProcessedOutput('http://example.com')).resolves.toBe(
+        false
+      );
+      expect(stateManager.state.processedUrls.has('http://example.com')).toBe(false);
+      expect(stateManager.state.urlToFile.has('http://example.com')).toBe(false);
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        '已处理URL的输出文件不存在，按未处理恢复',
+        {
+          url: 'http://example.com',
+          outputPath: '/path/to/file.pdf',
+        }
+      );
     });
 
     test('markProcessed应该标记URL为已处理', () => {

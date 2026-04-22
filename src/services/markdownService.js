@@ -307,10 +307,10 @@ export class MarkdownService {
    */
   async extractAndConvertPage(page, selector) {
     const pageUrl = typeof page.url === 'function' ? page.url() : undefined;
-    const { html, svgCount } = await page.evaluate((contentSelector, currentPageUrl) => {
+    const { html, svgCount, openAiModelSections = [] } = await page.evaluate((contentSelector, currentPageUrl) => {
       const container = document.querySelector(contentSelector);
       if (!container) {
-        return { html: '', svgCount: 0 };
+        return { html: '', svgCount: 0, openAiModelSections: [] };
       }
 
       const clone = container.cloneNode(true);
@@ -323,6 +323,7 @@ export class MarkdownService {
           return false;
         }
       })();
+      let openAiModelSections = [];
 
       const getVisibleText = (element) => {
         const textClone = element.cloneNode(true);
@@ -336,6 +337,138 @@ export class MarkdownService {
       };
 
       if (isOpenAiDocsPage) {
+        const decodeAstroValue = (value) => {
+          if (Array.isArray(value) && value.length === 2 && typeof value[0] === 'number') {
+            const [type, payload] = value;
+
+            if (type === 1 && Array.isArray(payload)) {
+              return payload.map(decodeAstroValue);
+            }
+
+            return decodeAstroValue(payload);
+          }
+
+          if (Array.isArray(value)) {
+            return value.map(decodeAstroValue);
+          }
+
+          if (value && typeof value === 'object') {
+            return Object.fromEntries(
+              Object.entries(value).map(([key, nestedValue]) => [key, decodeAstroValue(nestedValue)])
+            );
+          }
+
+          return value;
+        };
+
+        const parseModelCard = (island) => {
+          if (!island) return null;
+
+          let props = {};
+          try {
+            props = decodeAstroValue(JSON.parse(island.getAttribute('props') || '{}'));
+          } catch {
+            props = {};
+          }
+
+          const name = normalizeWhitespace(
+            props.name
+              || island.querySelector('img')?.getAttribute('alt')
+              || island.querySelector('.heading-md, .heading-sm, h3, h4')?.textContent
+              || ''
+          );
+          const description = normalizeWhitespace(
+            props.description || island.querySelector('p')?.textContent || ''
+          );
+          const command = normalizeWhitespace(
+            island.querySelector('.font-mono')?.textContent || (name ? `codex -m ${name}` : '')
+          );
+          const features = Array.isArray(props.data?.features)
+            ? props.data.features
+              .map((feature) => {
+                const title = normalizeWhitespace(feature?.title || '');
+                if (!title) return null;
+
+                return {
+                  title,
+                  value: typeof feature?.value === 'boolean' ? feature.value : normalizeWhitespace(feature?.value || ''),
+                  iconCount: Array.isArray(feature?.icons) ? feature.icons.length : 0,
+                };
+              })
+              .filter(Boolean)
+            : [];
+
+          if (!name && !description && !command && features.length === 0) {
+            return null;
+          }
+
+          return {
+            name,
+            description,
+            command,
+            features,
+          };
+        };
+
+        const collectModelSections = () => {
+          if (!/\/codex\/models\/?$/.test(currentPageUrl || '')) {
+            return [];
+          }
+
+          const sections = [];
+          const sectionHeadings = Array.from(clone.querySelectorAll('h2'));
+
+          sectionHeadings.forEach((heading) => {
+            const headingText = normalizeWhitespace(heading.textContent || '');
+            if (!['Recommended models', 'Alternative models'].includes(headingText)) {
+              return;
+            }
+
+            let grid = heading.nextElementSibling;
+            while (grid && !grid.querySelector?.('astro-island[component-url*="ModelDetails"]')) {
+              if (/^H2$/i.test(grid.tagName)) {
+                grid = null;
+                break;
+              }
+              grid = grid.nextElementSibling;
+            }
+
+            if (!grid) {
+              return;
+            }
+
+            const cards = Array.from(
+              grid.querySelectorAll('astro-island[component-url*="ModelDetails"]')
+            )
+              .map(parseModelCard)
+              .filter(Boolean);
+
+            if (cards.length === 0) {
+              return;
+            }
+
+            const notes = [];
+            let sibling = grid.nextElementSibling;
+            while (sibling && !/^H2$/i.test(sibling.tagName)) {
+              const text = getVisibleText(sibling);
+              if (text && !sibling.querySelector?.('astro-island[component-url*="ModelDetails"]')) {
+                notes.push(text);
+              }
+              sibling = sibling.nextElementSibling;
+            }
+
+            sections.push({
+              heading: headingText,
+              cards,
+              notes,
+            });
+          });
+
+          return sections;
+        };
+
+        openAiModelSections = collectModelSections();
+
         clone
           .querySelectorAll(
             'script, noscript, style, template, [data-page-copy-action], .page-copy-action, [data-anchor-id], [data-codex-screenshot-overlay]'
@@ -479,18 +612,24 @@ export class MarkdownService {
       return {
         html: clone.innerHTML,
         svgCount: svgs.length,
+        openAiModelSections,
       };
     }, selector, pageUrl);
 
     this.logger?.debug?.('从页面提取 HTML 完成', {
       hasContent: !!html,
       svgCount,
+      openAiModelSections: openAiModelSections.length,
     });
 
-    return this.convertHtmlToMarkdown(html, {
+    let markdown = this.convertHtmlToMarkdown(html, {
       debugMeta: { svgCount },
       pageUrl,
     });
+
+    markdown = this._normalizeOpenAiModelsPage(markdown, openAiModelSections, pageUrl);
+
+    return markdown;
   }
 
   /**
@@ -511,15 +650,128 @@ export class MarkdownService {
     sanitized = sanitized.replace(/^\s*Copied\s*$/gim, '');
 
     if (this._isOpenAiDocsPage(options.pageUrl)) {
+      sanitized = this._normalizeOpenAiWrappedCardLinks(sanitized, options.pageUrl);
       sanitized = this._normalizeOpenAiExampleTaskCards(sanitized);
       sanitized = this._stripOpenAiPagerNavigation(sanitized);
       sanitized = this._normalizeOpenAiQuickstartTabSummary(sanitized);
+      sanitized = this._normalizeOpenAiCliSetupCards(sanitized, options.pageUrl);
       sanitized = this._collapseOpenAiThemeVariantPairs(sanitized);
+      sanitized = this._simplifyOpenAiUseCasesIndex(sanitized, options.pageUrl);
     }
 
     sanitized = this._dedupeConsecutiveImageParagraphs(sanitized);
 
     return sanitized.replace(/\n{3,}/g, '\n\n').trim();
+  }
+
+  /**
+   * 将 Codex Models 页里被扁平化的模型卡片重建为紧凑、适合 PDF 的 Markdown。
+   *
+   * @param {string} markdown
+   * @param {Array<{ heading: string, cards: Array<Object>, notes?: string[] }>} modelSections
+   * @param {string} pageUrl
+   * @returns {string}
+   * @private
+   */
+  _normalizeOpenAiModelsPage(markdown, modelSections = [], pageUrl = '') {
+    if (!markdown || !/\/codex\/models\/?$/.test(pageUrl) || !Array.isArray(modelSections) || modelSections.length === 0) {
+      return markdown;
+    }
+
+    const iconScaleByTitle = {};
+    for (const section of modelSections) {
+      for (const card of section.cards || []) {
+        for (const feature of card.features || []) {
+          if (!feature?.title || !feature.iconCount) {
+            continue;
+          }
+
+          iconScaleByTitle[feature.title] = Math.max(
+            iconScaleByTitle[feature.title] || 0,
+            feature.iconCount
+          );
+        }
+      }
+    }
+
+    const wrapKnownModelNames = (text) => {
+      if (!text) return text;
+
+      return text.replace(/\b(gpt-\d+(?:\.\d+)?(?:-[a-z0-9]+)*)\b/gi, '`$1`');
+    };
+
+    const formatFeature = (feature) => {
+      if (!feature?.title) return '';
+
+      if (typeof feature.value === 'boolean') {
+        return `- ${feature.title}: ${feature.value ? 'Yes' : 'No'}`;
+      }
+
+      if (typeof feature.value === 'string' && feature.value.trim()) {
+        return `- ${feature.title}: ${feature.value.trim()}`;
+      }
+
+      if (feature.iconCount) {
+        const max = iconScaleByTitle[feature.title] || feature.iconCount;
+        return `- ${feature.title}: ${feature.iconCount}/${max}`;
+      }
+
+      return `- ${feature.title}`;
+    };
+
+    const formatCard = (card) => {
+      if (!card?.name) return '';
+
+      const parts = [`### ${card.name}`];
+
+      if (card.description) {
+        parts.push('', card.description);
+      }
+
+      if (card.command) {
+        parts.push('', '```bash', card.command, '```');
+      }
+
+      const featureLines = (card.features || []).map(formatFeature).filter(Boolean);
+      if (featureLines.length > 0) {
+        parts.push('', featureLines.join('\n'));
+      }
+
+      return parts.join('\n');
+    };
+
+    const escapeHeading = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    let normalized = markdown;
+    for (let index = 0; index < modelSections.length; index++) {
+      const section = modelSections[index];
+      if (!section?.heading || !Array.isArray(section.cards) || section.cards.length === 0) {
+        continue;
+      }
+
+      const nextHeading = modelSections[index + 1]?.heading || 'Other models';
+      const sectionBody = section.cards
+        .map(formatCard)
+        .filter(Boolean)
+        .join('\n\n');
+      const noteBody = (section.notes || [])
+        .map((note) => wrapKnownModelNames(note))
+        .filter(Boolean)
+        .join('\n\n');
+      const replacement = [sectionBody, noteBody].filter(Boolean).join('\n\n');
+
+      if (!replacement) {
+        continue;
+      }
+
+      const pattern = new RegExp(
+        `(## ${escapeHeading(section.heading)}\\n\\n)([\\s\\S]*?)(?=\\n## ${escapeHeading(nextHeading)}\\n|$)`
+      );
+
+      normalized = normalized.replace(pattern, `$1${replacement}\n\n`);
+    }
+
+    return normalized;
   }
 
   /**
@@ -539,6 +791,134 @@ export class MarkdownService {
     } catch {
       return false;
     }
+  }
+
+  /**
+   * 修复 OpenAI 首页等页面中的“整块卡片是链接”被 Turndown 打碎后的残留 Markdown。
+   *
+   * 典型坏形态：
+   * [
+   *
+   * ### Quickstart
+   *
+   * Download and start building with Codex.
+   *
+   * Get started](https://...)
+   *
+   * 期望输出：
+   * ### Quickstart
+   *
+   * Download and start building with Codex.
+   *
+   * [Get started](https://...)
+   *
+   * @param {string} markdown
+   * @returns {string}
+   * @private
+   */
+  _normalizeOpenAiWrappedCardLinks(markdown, pageUrl = '') {
+    if (!markdown) return markdown;
+
+    let normalized = markdown;
+
+    normalized = normalized.replace(/^\s*\[\]\([^)]+\)\s*$/gm, '');
+
+    normalized = normalized.replace(
+      /\[\s*((?:!\[[^\]]*]\([^)]*\)\s*)+)\n*(#{1,6}\s+[^\n]+)\n+([\s\S]*?)(?:\n+\]\(([^)\n]+)\)|\]\(([^)\n]+)\))(?=\s*(?:\n|$|\[))/g,
+      (match, images, heading, body, lineBreakUrl, inlineUrl) => {
+        const resolvedUrl = this._resolveResourceUrl((lineBreakUrl || inlineUrl || '').trim(), pageUrl);
+        const normalizedImages = images.trim();
+        const normalizedBody = body.trim();
+        const headingMatch = heading.trim().match(/^(#{1,6})\s+(.+)$/);
+
+        if (!normalizedImages || !normalizedBody || !headingMatch) {
+          return match;
+        }
+
+        const [, hashes, headingText] = headingMatch;
+        const linkedHeading = `${hashes} [${headingText.trim()}](${resolvedUrl})`;
+
+        return [normalizedImages, '', linkedHeading, '', normalizedBody, '', ''].join('\n');
+      }
+    );
+
+    normalized = normalized.replace(
+      /\[\s*((?:!\[[^\]]*]\([^)]*\)\s*)+)\n*([^\n#![][^)\n]*)\n+([\s\S]*?)(?:\n+\]\(([^)\n]+)\)|\]\(([^)\n]+)\))(?=\s*(?:\n|$|\[))/g,
+      (match, images, title, body, lineBreakUrl, inlineUrl) => {
+        const resolvedUrl = this._resolveResourceUrl((lineBreakUrl || inlineUrl || '').trim(), pageUrl);
+        const normalizedImages = images.trim();
+        const normalizedTitle = title.trim();
+        const normalizedBody = body.trim();
+
+        if (!normalizedImages || !normalizedTitle || !normalizedBody || !resolvedUrl) {
+          return match;
+        }
+
+        return [
+          normalizedImages,
+          '',
+          `### [${normalizedTitle}](${resolvedUrl})`,
+          '',
+          normalizedBody,
+          '',
+          '',
+        ].join('\n');
+      }
+    );
+
+    normalized = normalized.replace(
+      /\[\s*\n+(#{1,6}\s+[^\n]+)\n+([\s\S]*?)\n+\]\(([^)\n]+)\)(?=\s*(?:\n|$|\[))/g,
+      (match, heading, body, url) => {
+        const headingMatch = heading.trim().match(/^(#{1,6})\s+(.+)$/);
+        const normalizedBody = body.trim();
+        const normalizedUrl = this._resolveResourceUrl(url.trim(), pageUrl);
+
+        if (!headingMatch || !normalizedBody || !normalizedUrl) {
+          return match;
+        }
+
+        const [, hashes, headingText] = headingMatch;
+        const linkedHeading = `${hashes} [${headingText.trim()}](${normalizedUrl})`;
+
+        return [linkedHeading, '', normalizedBody, '', ''].join('\n');
+      }
+    );
+
+    normalized = normalized.replace(
+      /\[\s*\n+(#{1,6}\s+[^\n]+)\n+([\s\S]*?)\n+([^\]\n]+)\]\(([^)\n]+)\)(?=\s*(?:\n|$|\[))/g,
+      (match, heading, body, label, url) => {
+        const normalizedHeading = heading.trim();
+        const normalizedBody = body.trim();
+        const normalizedLabel = label.trim();
+        const normalizedUrl = this._resolveResourceUrl(url.trim(), pageUrl);
+
+        if (!normalizedHeading || !normalizedBody || !normalizedLabel || !normalizedUrl) {
+          return match;
+        }
+
+        return [
+          normalizedHeading,
+          '',
+          normalizedBody,
+          '',
+          `[${normalizedLabel}](${normalizedUrl})`,
+          '',
+          '',
+        ].join('\n');
+      }
+    );
+
+    normalized = normalized.replace(
+      /(\[[^\]\n]+]\([^)]+\))(?=\[[^\]\n]+]\([^)]+\))/g,
+      '$1\n'
+    );
+
+    normalized = normalized.replace(
+      /^\[([^\n\]]+\[[^\]]+]\([^)]+\)[^\n]*)$/gm,
+      '$1'
+    );
+
+    return normalized;
   }
 
   /**
@@ -578,8 +958,13 @@ export class MarkdownService {
   _stripOpenAiPagerNavigation(markdown) {
     if (!markdown) return markdown;
 
-    return markdown.replace(
+    const strippedPair = markdown.replace(
       /\[\s*Previous[\s\S]*?]\([^)]+\)\s*\[\s*Next[\s\S]*?]\([^)]+\)\s*$/m,
+      ''
+    );
+
+    return strippedPair.replace(
+      /\[\s*(?:Previous|Next)\s*[\s\S]*?]\([^)]+\)\s*$/m,
       ''
     );
   }
@@ -598,6 +983,49 @@ export class MarkdownService {
       /^AppRecommendedIDE extensionCodex in your IDECLICodex in your terminalCloudCodex in your browser$/m,
       ['- App (Recommended)', '- IDE extension', '- CLI', '- Cloud'].join('\n')
     );
+  }
+
+  /**
+   * 清理 Codex CLI 首页中由步骤卡片转换出来的重复数字与冗余标签。
+   *
+   * @param {string} markdown
+   * @param {string} pageUrl
+   * @returns {string}
+   * @private
+   */
+  _normalizeOpenAiCliSetupCards(markdown, pageUrl = '') {
+    if (!markdown || !/\/codex\/cli\/?$/.test(pageUrl)) {
+      return markdown;
+    }
+
+    return markdown
+      .replace(/^(\d+)\.\s+\1\s*$/gm, '$1.')
+      .replace(/^\s*[A-Za-z][A-Za-z\s]+ command\s*$/gm, '');
+  }
+
+  /**
+   * 精简 Codex use-cases 首页里的筛选按钮与装饰性大图，避免目录页在 PDF 中被图片撑成多页。
+   *
+   * @param {string} markdown
+   * @param {string} pageUrl
+   * @returns {string}
+   * @private
+   */
+  _simplifyOpenAiUseCasesIndex(markdown, pageUrl = '') {
+    if (!markdown || !/\/codex\/use-cases\/?$/.test(pageUrl)) {
+      return markdown;
+    }
+
+    return markdown
+      .replace(
+        /^\[(?:[^\]]+)]\([^)]*\?search=[^)]+\)(?:\s+\[(?:[^\]]+)]\([^)]*\?search=[^)]+\))*\s*$/gm,
+        ''
+      )
+      .replace(
+        /^(?:#{1,6}\s+)?No use cases match these filters\s*\n+Try clearing a few filters or searching for a broader term\.\s*$/m,
+        ''
+      )
+      .replace(/^\s*(?:!\[[^\]]*]\([^)]+\)\s*)+\s*$/gm, '');
   }
 
   /**

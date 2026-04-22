@@ -201,6 +201,349 @@ describe('MarkdownService', () => {
     expect(result).toContain('plugin-creator-invoke.png');
   });
 
+  test('sanitizeMarkdown 应该修复 OpenAI 首页卡片链接被打碎后的残留 Markdown', () => {
+    const service = new MarkdownService({ logger });
+    const markdown = [
+      '[',
+      '',
+      '### Quickstart',
+      '',
+      'Download and start building with Codex.',
+      '',
+      'Get started](https://developers.openai.com/codex/quickstart)',
+      '',
+      '[',
+      '',
+      '### Codex for Open Source',
+      '',
+      'Apply or nominate maintainers for API credits, ChatGPT Pro with Codex, and selective Codex Security access.',
+      '',
+      'Learn more](https://developers.openai.com/community/codex-for-oss)',
+    ].join('\n');
+
+    const result = service.sanitizeMarkdown(markdown, {
+      pageUrl: 'https://developers.openai.com/codex',
+    });
+
+    expect(result).toContain('### Quickstart');
+    expect(result).toContain('[Get started](https://developers.openai.com/codex/quickstart)');
+    expect(result).toContain('### Codex for Open Source');
+    expect(result).toContain(
+      '[Learn more](https://developers.openai.com/community/codex-for-oss)'
+    );
+    expect(result).toContain(
+      '[Get started](https://developers.openai.com/codex/quickstart)\n\n### Codex for Open Source'
+    );
+    expect(result).not.toMatch(/^\[$/m);
+  });
+
+  test('sanitizeMarkdown 应该修复带图片的 OpenAI 卡片整块链接并补全相对链接', () => {
+    const service = new MarkdownService({ logger });
+    const markdown = [
+      '[',
+      '',
+      '![](https://developers.openai.com/codex/use-cases/gh-pr-use-case.png)',
+      '',
+      '### Review pull requests faster',
+      '',
+      'Catch regressions and potential issues before human review.',
+      '',
+      'Integrations Workflow',
+      '',
+      '](/codex/use-cases/github-code-reviews)',
+    ].join('\n');
+
+    const result = service.sanitizeMarkdown(markdown, {
+      pageUrl: 'https://developers.openai.com/codex/use-cases',
+    });
+
+    expect(result).toContain(
+      '### [Review pull requests faster](https://developers.openai.com/codex/use-cases/github-code-reviews)'
+    );
+    expect(result).toContain('Catch regressions and potential issues before human review.');
+    expect(result).toContain('Integrations Workflow');
+    expect(result).not.toMatch(/^>\s*$/m);
+  });
+
+  test('sanitizeMarkdown 应该正确拆分同一行闭合并串接下一张图片卡片的 OpenAI 集合卡片', () => {
+    const service = new MarkdownService({ logger });
+    const markdown = [
+      '[',
+      '',
+      '![](https://developers.openai.com/codex/use-cases/background-codex-collection1.png) ![](https://developers.openai.com/codex/use-cases/production-systems-illustration.png)',
+      '',
+      '## Production systems',
+      '',
+      'Use Codex to navigate real codebases, make controlled changes, codify repeatable work, and keep production quality high.](/codex/use-cases/collections/production-systems) [![](https://developers.openai.com/codex/use-cases/background-codex-collection2.png) ![](https://developers.openai.com/codex/use-cases/analysis-collaboration-illustration.png)',
+      '',
+      '## Productivity and collaboration',
+      '',
+      'Work with Codex to analyze data and complex source material, combine multiple apps and services, and turn insights into action.](/codex/use-cases/collections/productivity-and-collaboration)',
+    ].join('\n');
+
+    const result = service.sanitizeMarkdown(markdown, {
+      pageUrl: 'https://developers.openai.com/codex/use-cases',
+    });
+
+    expect(result).toContain(
+      '## [Production systems](https://developers.openai.com/codex/use-cases/collections/production-systems)'
+    );
+    expect(result).toContain(
+      '## [Productivity and collaboration](https://developers.openai.com/codex/use-cases/collections/productivity-and-collaboration)'
+    );
+    expect(result).not.toContain('github-code-reviews');
+    expect(result).not.toContain('](/codex/use-cases/collections/production-systems) [![]');
+  });
+
+  test('sanitizeMarkdown 应该修复带图片和纯文本标题的 OpenAI 横幅卡片', () => {
+    const service = new MarkdownService({ logger });
+    const markdown = [
+      '[',
+      '',
+      '![](https://developers.openai.com/images/codex/codex-banner-icon.webp)',
+      '',
+      'Use the Codex app on Windows',
+      '',
+      'Work across projects, run parallel agent threads, and review results in one place with the native Windows app.',
+      '',
+      '](/codex/app/windows)',
+    ].join('\n');
+
+    const result = service.sanitizeMarkdown(markdown, {
+      pageUrl: 'https://developers.openai.com/codex/windows',
+    });
+
+    expect(result).toContain(
+      '### [Use the Codex app on Windows](https://developers.openai.com/codex/app/windows)'
+    );
+    expect(result).toContain(
+      'Work across projects, run parallel agent threads, and review results in one place with the native Windows app.'
+    );
+    expect(result).not.toMatch(/^\[$/m);
+  });
+
+  test('sanitizeMarkdown 应该修复无按钮文案的 OpenAI 功能卡片并移除尾部 Next 导航残留', () => {
+    const service = new MarkdownService({ logger });
+    const markdown = [
+      '[',
+      '',
+      '### Prompt with editor context',
+      '',
+      'Use open files, selections, and `@file` references to get more relevant results with shorter prompts.',
+      '',
+      '](https://developers.openai.com/codex/ide/features#prompting-codex)[',
+      '',
+      '### Switch models',
+      '',
+      'Use the default model or switch to other models to leverage their respective strengths.',
+      '',
+      '](https://developers.openai.com/codex/ide/features#switch-between-models)',
+      '',
+      '[',
+      '',
+      'Next',
+      '',
+      'Features',
+      '',
+      '](https://developers.openai.com/codex/ide/features)',
+    ].join('\n');
+
+    const result = service.sanitizeMarkdown(markdown, {
+      pageUrl: 'https://developers.openai.com/codex/ide',
+    });
+
+    expect(result).toContain(
+      '### [Prompt with editor context](https://developers.openai.com/codex/ide/features#prompting-codex)'
+    );
+    expect(result).toContain(
+      '### [Switch models](https://developers.openai.com/codex/ide/features#switch-between-models)'
+    );
+    expect(result).toContain(
+      'Use open files, selections, and `@file` references to get more relevant results with shorter prompts.\n\n### [Switch models](https://developers.openai.com/codex/ide/features#switch-between-models)'
+    );
+    expect(result).not.toContain('](https://developers.openai.com/codex/ide/features#prompting-codex)[');
+    expect(result).not.toContain('Next\n\nFeatures');
+  });
+
+  test('sanitizeMarkdown 应该拆开 OpenAI 文档里粘连在一起的下载链接', () => {
+    const service = new MarkdownService({ logger });
+    const markdown = [
+      '[Download for macOS (Apple Silicon)](https://persistent.oaistatic.com/codex-app-prod/Codex.dmg)[Download for macOS (Intel)](https://persistent.oaistatic.com/codex-app-prod/Codex-latest-x64.dmg)',
+    ].join('\n');
+
+    const result = service.sanitizeMarkdown(markdown, {
+      pageUrl: 'https://developers.openai.com/codex/quickstart',
+    });
+
+    expect(result).toContain(
+      '[Download for macOS (Apple Silicon)](https://persistent.oaistatic.com/codex-app-prod/Codex.dmg)\n[Download for macOS (Intel)](https://persistent.oaistatic.com/codex-app-prod/Codex-latest-x64.dmg)'
+    );
+  });
+
+  test('sanitizeMarkdown 应该清理 Codex CLI 首页步骤卡片里的重复数字和 command 标签', () => {
+    const service = new MarkdownService({ logger });
+    const markdown = [
+      '1.  1',
+      '',
+      '    ### Install',
+      '',
+      '    Install the Codex CLI with npm.',
+      '',
+      '    npm install command',
+      '',
+      '    npm i -g @openai/codex',
+    ].join('\n');
+
+    const result = service.sanitizeMarkdown(markdown, {
+      pageUrl: 'https://developers.openai.com/codex/cli',
+    });
+
+    expect(result).toContain('1.');
+    expect(result).not.toContain('1.  1');
+    expect(result).not.toContain('npm install command');
+  });
+
+  test('sanitizeMarkdown 应该精简 Codex Use Cases 首页里的筛选按钮和装饰性大图', () => {
+    const service = new MarkdownService({ logger });
+    const markdown = [
+      '# Codex Use Cases',
+      '',
+      '[Workflow](https://developers.openai.com/codex/use-cases?search=Workflow) [Integrations](https://developers.openai.com/codex/use-cases?search=Integrations) [Knowledge Work](https://developers.openai.com/codex/use-cases?search=Knowledge+Work)',
+      '',
+      '## Collections',
+      '',
+      '![](https://developers.openai.com/codex/use-cases/background-codex-collection1.png) ![](https://developers.openai.com/codex/use-cases/production-systems-illustration.png)',
+      '',
+      '## [Production systems](https://developers.openai.com/codex/use-cases/collections/production-systems)',
+      '',
+      'Use Codex to navigate real codebases, make controlled changes, codify repeatable work, and keep production quality high.',
+      '',
+      '## All use cases',
+      '',
+      '![](https://developers.openai.com/images/codex/codex-wallpaper-1.webp)',
+      '',
+      '### [Add iOS app intents](https://developers.openai.com/codex/use-cases/ios-app-intents)',
+      '',
+      'Use Codex to make your app’s actions and content available to Shortcuts, Siri, Spotlight...',
+      '',
+      'iOS Code',
+      '',
+      '## No use cases match these filters',
+      '',
+      'Try clearing a few filters or searching for a broader term.',
+    ].join('\n');
+
+    const result = service.sanitizeMarkdown(markdown, {
+      pageUrl: 'https://developers.openai.com/codex/use-cases',
+    });
+
+    expect(result).toContain('# Codex Use Cases');
+    expect(result).toContain('## Collections');
+    expect(result).toContain(
+      '## [Production systems](https://developers.openai.com/codex/use-cases/collections/production-systems)'
+    );
+    expect(result).toContain(
+      '### [Add iOS app intents](https://developers.openai.com/codex/use-cases/ios-app-intents)'
+    );
+    expect(result).toContain('iOS Code');
+    expect(result).not.toContain('?search=Workflow');
+    expect(result).not.toContain('background-codex-collection1.png');
+    expect(result).not.toContain('codex-wallpaper-1.webp');
+    expect(result).not.toContain('No use cases match these filters');
+  });
+
+  test('normalizeOpenAiModelsPage 应该把 Codex Models 卡片重建为紧凑可读的列表', () => {
+    const service = new MarkdownService({ logger });
+    const markdown = [
+      '# Codex Models',
+      '',
+      '## Recommended models',
+      '',
+      '![gpt-5.4](https://developers.openai.com/images/api/models/gpt-5.4.jpg)',
+      '',
+      'gpt-5.4',
+      '',
+      'Flagship frontier model for professional work.',
+      '',
+      'codex -m gpt-5.4',
+      '',
+      'Capability',
+      '',
+      'Speed',
+      '',
+      'Codex CLI & SDK',
+      '',
+      'Codex Cloud',
+      '',
+      'For most tasks in Codex, start with `gpt-5.4`.',
+      '',
+      '## Alternative models',
+      '',
+      'gpt-5.2',
+      '',
+      'Previous general-purpose model.',
+      '',
+      'codex -m gpt-5.2',
+      '',
+      'Show details',
+      '',
+      '## Other models',
+      '',
+      'When you sign in with ChatGPT, Codex works best with the models listed above.',
+    ].join('\n');
+
+    const result = service._normalizeOpenAiModelsPage(
+      markdown,
+      [
+        {
+          heading: 'Recommended models',
+          cards: [
+            {
+              name: 'gpt-5.4',
+              description: 'Flagship frontier model for professional work.',
+              command: 'codex -m gpt-5.4',
+              features: [
+                { title: 'Capability', iconCount: 5, value: '' },
+                { title: 'Speed', iconCount: 3, value: '' },
+                { title: 'Codex CLI & SDK', value: true, iconCount: 0 },
+                { title: 'Codex Cloud', value: false, iconCount: 0 },
+              ],
+            },
+          ],
+          notes: ['For most tasks in Codex, start with gpt-5.4.'],
+        },
+        {
+          heading: 'Alternative models',
+          cards: [
+            {
+              name: 'gpt-5.2',
+              description: 'Previous general-purpose model.',
+              command: 'codex -m gpt-5.2',
+              features: [
+                { title: 'Capability', iconCount: 4, value: '' },
+                { title: 'Speed', iconCount: 3, value: '' },
+                { title: 'Codex CLI & SDK', value: true, iconCount: 0 },
+              ],
+            },
+          ],
+          notes: [],
+        },
+      ],
+      'https://developers.openai.com/codex/models'
+    );
+
+    expect(result).toContain('### gpt-5.4');
+    expect(result).toContain('```bash\ncodex -m gpt-5.4\n```');
+    expect(result).toContain('- Capability: 5/5');
+    expect(result).toContain('- Speed: 3/3');
+    expect(result).toContain('- Codex CLI & SDK: Yes');
+    expect(result).toContain('- Codex Cloud: No');
+    expect(result).toContain('For most tasks in Codex, start with `gpt-5.4`.');
+    expect(result).toContain('### gpt-5.2');
+    expect(result).not.toContain('![gpt-5.4]');
+    expect(result).not.toContain('Show details');
+  });
+
   test('代码块应保留语言标识', () => {
     const service = new MarkdownService({ logger });
     const html = '<pre><code class="language-js">const x = 1;</code></pre>';

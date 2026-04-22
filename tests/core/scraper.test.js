@@ -65,6 +65,7 @@ describe('Scraper', () => {
         load: vi.fn(),
         save: vi.fn(),
         isProcessed: vi.fn().mockReturnValue(false),
+        hasValidProcessedOutput: vi.fn().mockResolvedValue(true),
         markProcessed: vi.fn(),
         markFailed: vi.fn(),
         clearFailure: vi.fn(),
@@ -387,6 +388,7 @@ describe('Scraper', () => {
 
     it('should skip already processed pages', async () => {
       mockDependencies.stateManager.isProcessed.mockReturnValue(true);
+      mockDependencies.stateManager.hasValidProcessedOutput.mockResolvedValue(true);
 
       const result = await scraper.scrapePage(testUrl, testIndex);
 
@@ -396,6 +398,28 @@ describe('Scraper', () => {
       });
       expect(mockDependencies.progressTracker.skip).toHaveBeenCalledWith(testUrl);
       expect(mockPage.goto).not.toHaveBeenCalled();
+    });
+
+    it('should re-scrape processed pages when the tracked output is missing', async () => {
+      mockDependencies.stateManager.isProcessed.mockReturnValue(true);
+      mockDependencies.stateManager.hasValidProcessedOutput.mockResolvedValue(false);
+
+      const result = await scraper.scrapePage(testUrl, testIndex);
+
+      expect(result).toEqual({
+        status: 'success',
+        title: 'Page Title',
+        outputPath: './pdfs/001-page.pdf',
+        isBatchMode: false,
+        imagesLoaded: true,
+      });
+      expect(mockDependencies.progressTracker.skip).not.toHaveBeenCalled();
+      expect(mockDependencies.pageManager.createPage).toHaveBeenCalledWith('scraper-page-0');
+      expect(mockPage.goto).toHaveBeenCalled();
+      expect(mockDependencies.logger.info).toHaveBeenCalledWith(
+        '检测到已处理状态但输出缺失，重新爬取当前URL',
+        { url: testUrl }
+      );
     });
 
     it('should handle page navigation errors', async () => {

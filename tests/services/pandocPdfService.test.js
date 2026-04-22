@@ -70,7 +70,10 @@ describe('PandocPdfService', () => {
       expect(args).toContain('input.md');
       expect(args).toContain('-o');
       expect(args).toContain('output.pdf');
+      expect(args).toContain('--from');
+      expect(args).toContain('markdown-smart');
       expect(args).toContain('--pdf-engine=xelatex');
+      expect(args).toContain('--include-in-header');
     });
 
     it('should include format option', () => {
@@ -124,6 +127,15 @@ describe('PandocPdfService', () => {
 
       expect(args).toContain('CJKmainfont=Noto Sans CJK SC');
       expect(args).not.toContain('CJKmainfont=Arial Unicode MS');
+    });
+
+    it('should include the shared code-block header file instead of inline latex overrides', () => {
+      const args = service._buildPandocArgs('input.md', 'output.pdf', {});
+      const includeIndex = args.indexOf('--include-in-header');
+
+      expect(includeIndex).toBeGreaterThanOrEqual(0);
+      expect(args[includeIndex + 1]).toMatch(/pandoc-code-blocks\.tex$/);
+      expect(args.join(' ')).not.toContain('header-includes=');
     });
 
     it('should allow overriding the CJK main font from config', () => {
@@ -432,6 +444,44 @@ describe('PandocPdfService', () => {
       expect(result).toBe('<img src="https://developers.openai.com/images/app.webp" alt="App screenshot">');
     });
 
+    it('should normalize typography that renders poorly in XeLaTeX output', () => {
+      const input = "It doesn’t work⁠. Press ⌘-/ if it isn’t visible.";
+      const result = service._cleanMarkdownContent(input);
+
+      expect(result).toBe("It doesn't work. Press Cmd-/ if it isn't visible.");
+    });
+
+    it('should replace unsupported emoji glyphs with readable text fallbacks', () => {
+      const input = 'Wait for Codex to react (👀) and post a review.';
+      const result = service._cleanMarkdownContent(input);
+
+      expect(result).toBe('Wait for Codex to react (:eyes:) and post a review.');
+    });
+
+    it('should replace unsupported arrow glyphs with ASCII fallbacks', () => {
+      const input = 'Move work between local ↔ cloud.';
+      const result = service._cleanMarkdownContent(input);
+
+      expect(result).toBe('Move work between local <-> cloud.');
+    });
+
+    it('should normalize escaped inline-code delimiters outside fenced blocks', () => {
+      const input = 'Use \\`codex exec\\` to run Codex in scripts and CI.';
+      const result = service._cleanMarkdownContent(input);
+
+      expect(result).toBe('Use `codex exec` to run Codex in scripts and CI.');
+    });
+
+    it('should remove stray escaped backticks after quoted inline-code examples', () => {
+      const input =
+        'When forbidden, suggest an alternative (for example, `"Use \\`rg\\` instead of \\`grep\\`.”\\`).';
+      const result = service._cleanMarkdownContent(input);
+
+      expect(result).toBe(
+        'When forbidden, suggest an alternative (for example, ``"Use `rg` instead of `grep`."``).'
+      );
+    });
+
     it('should preserve export/import lines inside fenced code blocks', () => {
       // Python example containing `import`, and shell `export VAR=...` must
       // survive because they are inside fenced code blocks.
@@ -634,6 +684,22 @@ describe('PandocPdfService', () => {
       await expect(service._runPandoc(inputPath, outputPath, {})).rejects.toThrow('PDF 文件未生成');
 
       spawnSpy.mockReset();
+    });
+  });
+
+  describe('_selectBatchTitle', () => {
+    it('should prefer the page heading over browser-title metadata for injected batch headings', () => {
+      const content = [
+        '- [General](#general)',
+        '',
+        '# Codex app settings',
+        '',
+        'Body content.',
+      ].join('\n');
+
+      expect(service._selectBatchTitle(content, 'Settings – Codex app', 'fallback.md')).toBe(
+        'Codex app settings'
+      );
     });
   });
 });

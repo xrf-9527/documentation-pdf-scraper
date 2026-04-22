@@ -1115,9 +1115,18 @@ export class Scraper extends EventEmitter {
 
     // 检查是否已处理
     if (this.stateManager.isProcessed(url)) {
-      this.logger.debug(`跳过已处理的URL: ${url}`);
-      this.progressTracker.skip(url);
-      return { status: 'skipped', reason: 'already_processed' };
+      const hasValidProcessedOutput =
+        typeof this.stateManager.hasValidProcessedOutput === 'function'
+          ? await this.stateManager.hasValidProcessedOutput(url)
+          : true;
+
+      if (hasValidProcessedOutput) {
+        this.logger.debug(`跳过已处理的URL: ${url}`);
+        this.progressTracker.skip(url);
+        return { status: 'skipped', reason: 'already_processed' };
+      }
+
+      this.logger.info('检测到已处理状态但输出缺失，重新爬取当前URL', { url });
     }
 
     const pageId = `scraper-page-${index}`;

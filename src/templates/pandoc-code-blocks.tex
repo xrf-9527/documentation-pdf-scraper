@@ -1,0 +1,63 @@
+% Shared Pandoc PDF code-block styling.
+%
+% Goals:
+% - wrap long lines in both plain fenced blocks (`verbatim`) and syntax-highlighted blocks
+% - keep a clear block container in the PDF for readability
+% - avoid visible wrap markers that are not present in the source
+
+\usepackage{fvextra}
+\usepackage{framed}
+\definecolor{codeblockbg}{RGB}{245,247,250}
+\definecolor{codeblockborder}{RGB}{220,224,228}
+
+\fvset{
+  breaklines,
+  breakanywhere,
+  breaksymbolleft={},
+  breaksymbolright={},
+  breakindent=1em,
+  fontsize=\small
+}
+
+% Pandoc emits untyped fenced code blocks as `verbatim`, so we recustomize it
+% directly to keep long prompts/commands readable in PDFs.
+\RecustomVerbatimEnvironment{verbatim}{Verbatim}{
+  breaklines,
+  breakanywhere,
+  breaksymbolleft={},
+  breaksymbolright={},
+  breakindent=1em,
+  fontsize=\small,
+  frame=single,
+  framesep=0.6em,
+  rulecolor=\color{codeblockborder}
+}
+
+% Pandoc defines `Shaded` later in its template, so defer the redefinition
+% until the document begins. This keeps syntax-highlighted blocks in a light
+% container similar to the docs site while remaining print-friendly.
+\makeatletter
+\AtBeginDocument{
+  \@ifundefined{Shaded}{
+    \newenvironment{Shaded}{
+      \def\FrameCommand{
+        \fboxsep=0.6em
+        \colorbox{codeblockbg}
+      }
+      \MakeFramed{\advance\hsize-\width\FrameRestore}
+    }{
+      \endMakeFramed
+    }
+  }{
+    \renewenvironment{Shaded}{
+      \def\FrameCommand{
+        \fboxsep=0.6em
+        \colorbox{codeblockbg}
+      }
+      \MakeFramed{\advance\hsize-\width\FrameRestore}
+    }{
+      \endMakeFramed
+    }
+  }
+}
+\makeatother

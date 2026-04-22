@@ -224,6 +224,39 @@ export class StateManager extends EventEmitter {
   }
 
   /**
+   * 检查已处理URL对应的输出文件是否仍然存在。
+   * 如果状态已标记为已处理，但产物或映射缺失，则自动清理脏状态并返回 false。
+   *
+   * @param {string} url
+   * @returns {Promise<boolean>}
+   */
+  async hasValidProcessedOutput(url) {
+    if (!this.state.processedUrls.has(url)) {
+      return false;
+    }
+
+    const outputPath = this.state.urlToFile.get(url);
+    if (!outputPath) {
+      this.state.processedUrls.delete(url);
+      this.logger.warn('已处理URL缺少输出文件映射，按未处理恢复', { url });
+      return false;
+    }
+
+    const exists = await this.fileService.exists(outputPath);
+    if (exists) {
+      return true;
+    }
+
+    this.state.processedUrls.delete(url);
+    this.state.urlToFile.delete(url);
+    this.logger.warn('已处理URL的输出文件不存在，按未处理恢复', {
+      url,
+      outputPath,
+    });
+    return false;
+  }
+
+  /**
    * 标记URL为已处理
    */
   markProcessed(url, filePath = null) {

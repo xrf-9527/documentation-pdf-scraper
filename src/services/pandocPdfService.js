@@ -3,6 +3,7 @@ import { spawn } from 'child_process';
 import { createHash } from 'crypto';
 import path from 'path';
 import fs from 'fs';
+import { fileURLToPath } from 'url';
 import { fromMarkdown } from 'mdast-util-from-markdown';
 import { mdxFromMarkdown } from 'mdast-util-mdx';
 import { mdxjs } from 'micromark-extension-mdxjs';
@@ -1381,8 +1382,55 @@ export class PandocPdfService {
       cleaned = lines.join('\n');
     }
 
+    // 4d. Normalize escaped inline-code delimiters outside fenced code blocks.
+    // Some scraped pages escape inline backticks (`\`cmd\``), which renders as
+    // odd quote-like characters instead of inline code in the final PDF.
+    {
+      const lines = cleaned.split('\n');
+      let inFence = false;
+      let fenceChar = '';
+      let fenceCount = 0;
+      for (let i = 0; i < lines.length; i++) {
+        const fenceMatch = lines[i].match(/^>?\s*(`{3,}|~{3,})/);
+        if (fenceMatch) {
+          const fc = fenceMatch[1][0];
+          const fcCount = fenceMatch[1].length;
+          if (!inFence) {
+            inFence = true;
+            fenceChar = fc;
+            fenceCount = fcCount;
+          } else if (fc === fenceChar && fcCount >= fenceCount) {
+            inFence = false;
+          }
+          continue;
+        }
+        if (inFence) continue;
+        lines[i] = lines[i]
+          .replace(/`([^`\n]*(?:\\`[^`\n]+\\`[^`\n]*)+)\\`/g, (_match, inner) => {
+            const normalizedInner = inner.replace(/\\`/g, '`').replace(/[\u201c\u201d]/g, '"');
+            return `\`\`${normalizedInner}\`\``;
+          })
+          .replace(/\\`([^`\n]+)\\`/g, '`$1`')
+          .replace(/([.?!]["“”'])\\`/g, '$1');
+      }
+      cleaned = lines.join('\n');
+    }
+
     // 5. 将图片 URL 中的 fm=webp 替换为 fm=png（LaTeX 不支持 webp 格式）
     cleaned = cleaned.replace(/fm=webp/g, 'fm=png');
+
+    // 6. 规范化 XeLaTeX 在当前字体组合下容易出现排版异常或缺字的字符。
+    // 这里仅处理已经验证会影响阅读体验的少量字符：
+    // - 弯单引号在正文中容易渲染成断裂字距（doesn’t -> doesn't）
+    // - Command 符号 ⌘ 在当前主字体下缺字
+    // - 少量 emoji / 符号会退化成缺字方框，改成可读的文本等价物
+    // - Word Joiner / 零宽字符会让 Pandoc/XeLaTeX 产生奇怪断词
+    cleaned = cleaned
+      .replace(/[\u2018\u2019]/g, "'")
+      .replace(/\u2318/g, 'Cmd')
+      .replace(/\u{1F440}/gu, ':eyes:')
+      .replace(/\u2194/g, '<->')
+      .replace(/\u200b|\u200c|\u200d|\u2060|\ufeff/g, '');
 
     return cleaned;
   }
@@ -1401,18 +1449,21 @@ export class PandocPdfService {
       ...(options || {}),
     };
     const cjkMainFont = markdownPdfConfig.cjkMainFont || 'Noto Sans CJK SC';
+    const headerPath = fileURLToPath(new URL('../templates/pandoc-code-blocks.tex', import.meta.url));
 
     const args = [
       inputPath,
       '-o',
       outputPath,
+      '--from',
+      'markdown-smart', // Keep ASCII apostrophes/quotes; avoid XeLaTeX smart-punctuation regressions
       '--pdf-engine=xelatex', // 使用 xelatex 支持中文
+      '--include-in-header',
+      headerPath,
       '--variable',
       `CJKmainfont=${cjkMainFont}`, // 主字体（使用 CI 可用的开源字体，支持通过配置覆盖）
       '--variable',
       'geometry:margin=1in', // 页边距
-      '--variable',
-      'header-includes=\\usepackage{fvextra} \\DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines,breakanywhere,fontsize=\\\\small,commandchars=\\\\\\{\\}} \\usepackage{xurl}', // 启用代码换行(支持任意位置)、缩小代码字号并增强 URL 换行。不再使用 ltablex 防止表格溢出
     ];
 
     // 添加其他选项
@@ -1671,9 +1722,11 @@ export class PandocPdfService {
         // Remove frontmatter if present
         content = this._removeFrontmatter(content);
 
-        // Get article title
-        const title =
-          articleTitles[pageIndex] || this._extractTitleFromContent(content) || `Page ${pageIndex}`;
+        const title = this._selectBatchTitle(
+          content,
+          articleTitles[pageIndex],
+          `Page ${pageIndex}`
+        );
 
         // Strip leading title from content if it duplicates the injected title
         const cleanedContent = this._stripLeadingTitle(content, title);
@@ -1698,8 +1751,7 @@ export class PandocPdfService {
       let content = fs.readFileSync(filePath, 'utf8');
       content = this._removeFrontmatter(content);
 
-      const title =
-        (index && articleTitles[index]) || this._extractTitleFromContent(content) || file;
+      const title = this._selectBatchTitle(content, index && articleTitles[index], file);
       const cleanedContent = this._stripLeadingTitle(content, title);
       parts.push(`\\newpage\n\n## ${title}\n\n${cleanedContent}\n`);
 
@@ -1727,8 +1779,7 @@ export class PandocPdfService {
       const prefix = file.split('-')[0];
       const index = /^\d+$/.test(prefix) ? String(parseInt(prefix, 10)) : null;
 
-      const title =
-        (index && articleTitles[index]) || this._extractTitleFromContent(content) || file;
+      const title = this._selectBatchTitle(content, index && articleTitles[index], file);
       const cleanedContent = this._stripLeadingTitle(content, title);
 
       // Add with page break (first page doesn't need break)
@@ -1740,6 +1791,20 @@ export class PandocPdfService {
     }
 
     return parts.join('\n');
+  }
+
+  /**
+   * 为 batch PDF 选择最适合读者阅读的标题。
+   * 优先使用页面正文中的 H1/H2，其次才回退到浏览器 title/metadata。
+   *
+   * @param {string} content
+   * @param {string} preferredTitle
+   * @param {string} fallbackTitle
+   * @returns {string}
+   * @private
+   */
+  _selectBatchTitle(content, preferredTitle, fallbackTitle) {
+    return this._extractTitleFromContent(content) || preferredTitle || fallbackTitle;
   }
 
   /**
