@@ -378,6 +378,23 @@ describe('MarkdownService', () => {
     expect(result).not.toContain('Next Windows');
   });
 
+  test('sanitizeMarkdown 不应把尾部正常链接误判为 pager', () => {
+    const service = new MarkdownService({ logger });
+    const markdown = [
+      '# Agents.md',
+      '',
+      'Learn how to customize repository instructions.',
+      '',
+      '[Next steps](https://developers.openai.com/codex/guides/next-steps)',
+    ].join('\n');
+
+    const result = service.sanitizeMarkdown(markdown, {
+      pageUrl: 'https://developers.openai.com/codex/guides/agents-md',
+    });
+
+    expect(result).toContain('[Next steps](https://developers.openai.com/codex/guides/next-steps)');
+  });
+
   test('normalizeOpenAiModelsPage 应该把 Codex Models 卡片重建为紧凑可读的列表', () => {
     const service = new MarkdownService({ logger });
     const markdown = [
@@ -563,5 +580,36 @@ describe('MarkdownService', () => {
     expect(page.evaluate).toHaveBeenCalledTimes(1);
     expect(markdown).toContain('Title');
     expect(markdown).toContain('![Body](https://developers.openai.com/images/body.png)');
+  });
+
+  test('_getOpenAiPagerLinkInfo 和 _shouldStripOpenAiPagerLinkGroup 应该区分真正 pager 与普通 Next 链接', () => {
+    const service = new MarkdownService({ logger });
+    const previousInfo = service._getOpenAiPagerLinkInfo('Previous Settings', ['Previous', 'Settings']);
+    const nextInfo = service._getOpenAiPagerLinkInfo('Next Automations', ['Next', 'Automations']);
+    const nextStepsInfo = service._getOpenAiPagerLinkInfo('Next steps', ['Next steps']);
+
+    expect(previousInfo).toEqual({
+      kind: 'previous',
+      exact: true,
+      hasTitle: true,
+    });
+    expect(nextInfo).toEqual({
+      kind: 'next',
+      exact: true,
+      hasTitle: true,
+    });
+    expect(nextStepsInfo).toEqual({
+      kind: 'next',
+      exact: false,
+      hasTitle: true,
+    });
+
+    expect(
+      service._shouldStripOpenAiPagerLinkGroup([previousInfo, nextInfo], { requireExact: true })
+    ).toBe(true);
+    expect(
+      service._shouldStripOpenAiPagerLinkGroup([nextStepsInfo], { requireExact: true })
+    ).toBe(false);
+    expect(service._shouldStripOpenAiPagerLinkGroup([nextStepsInfo])).toBe(false);
   });
 });

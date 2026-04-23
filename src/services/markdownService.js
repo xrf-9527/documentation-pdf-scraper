@@ -696,13 +696,77 @@ export class MarkdownService {
           )
           .forEach((node) => node.remove());
 
-        clone.querySelectorAll('nav').forEach((nav) => {
-          const pagerLabels = Array.from(nav.querySelectorAll('a'))
-            .map((link) => normalizeWhitespace(link.textContent || '').toLowerCase())
+        const normalizePagerLabel = (text = '') => normalizeWhitespace(text).toLowerCase();
+
+        const getPagerLinkInfo = (link) => {
+          if (!link) return null;
+
+          const label = normalizePagerLabel(link.textContent || '');
+          if (!label) return null;
+
+          const segments = Array.from(link.querySelectorAll('div, span, p, strong, small'))
+            .map((node) => normalizePagerLabel(getVisibleText(node)))
             .filter(Boolean);
 
-          const isPagerNav = pagerLabels.some((label) => label.startsWith('previous')) ||
-            pagerLabels.some((label) => label.startsWith('next'));
+          const exactSegmentKind = segments.find((segment) => segment === 'previous' || segment === 'next');
+          if (exactSegmentKind) {
+            return {
+              kind: exactSegmentKind,
+              exact: true,
+              hasTitle: segments.some((segment) => segment !== exactSegmentKind) || label !== exactSegmentKind,
+            };
+          }
+
+          if (label === 'previous' || label === 'next') {
+            return {
+              kind: label,
+              exact: true,
+              hasTitle: false,
+            };
+          }
+
+          const titledMatch = label.match(/^(previous|next)\s+\S/);
+          if (titledMatch) {
+            return {
+              kind: titledMatch[1],
+              exact: false,
+              hasTitle: true,
+            };
+          }
+
+          return null;
+        };
+
+        const shouldStripPagerLinks = (linkInfos, { requireExact = false } = {}) => {
+          if (!Array.isArray(linkInfos) || linkInfos.length === 0 || linkInfos.length > 2) {
+            return false;
+          }
+
+          if (linkInfos.some((info) => !info)) {
+            return false;
+          }
+
+          if (requireExact && linkInfos.some((info) => !info.exact)) {
+            return false;
+          }
+
+          const hasPrevious = linkInfos.some((info) => info.kind === 'previous');
+          const hasNext = linkInfos.some((info) => info.kind === 'next');
+
+          if (hasPrevious && hasNext) {
+            return true;
+          }
+
+          if (linkInfos.length === 1) {
+            return linkInfos[0].exact && !linkInfos[0].hasTitle;
+          }
+
+          return false;
+        };
+
+        clone.querySelectorAll('nav').forEach((nav) => {
+          const linkInfos = Array.from(nav.querySelectorAll('a')).map(getPagerLinkInfo);
+          const isPagerNav = shouldStripPagerLinks(linkInfos, { requireExact: true });
 
           if (isPagerNav) {
             nav.remove();
@@ -1225,19 +1289,25 @@ export class MarkdownService {
     try {
       const tree = fromMarkdown(markdown);
       const trailingPagerNodes = [];
+      const trailingPagerLinkInfos = [];
 
       for (let index = tree.children.length - 1; index >= 0; index -= 1) {
         const node = tree.children[index];
-        const pagerKind = this._classifyOpenAiPagerNode(node);
+        const pagerInfo = this._getOpenAiPagerNodeInfo(node);
 
-        if (!pagerKind) {
+        if (!pagerInfo) {
           break;
         }
 
         trailingPagerNodes.unshift(node);
+        trailingPagerLinkInfos.unshift(...pagerInfo.linkInfos);
       }
 
       if (trailingPagerNodes.length === 0) {
+        return markdown;
+      }
+
+      if (!this._shouldStripOpenAiPagerLinkGroup(trailingPagerLinkInfos)) {
         return markdown;
       }
 
@@ -1253,13 +1323,13 @@ export class MarkdownService {
   }
 
   /**
-   * 判断段落节点是否为 OpenAI 文档尾部 pager 链接。
+   * 提取段落节点中的 pager 链接信息。
    *
    * @param {import('mdast').Content} node
-   * @returns {'previous'|'next'|'previous-next'|null}
+   * @returns {{linkInfos: Array<{kind: 'previous'|'next', exact: boolean, hasTitle: boolean}>}|null}
    * @private
    */
-  _classifyOpenAiPagerNode(node) {
+  _getOpenAiPagerNodeInfo(node) {
     if (!node || node.type !== 'paragraph' || !Array.isArray(node.children)) {
       return null;
     }
@@ -1282,23 +1352,15 @@ export class MarkdownService {
       return null;
     }
 
-    const kinds = linkChildren.map((child) =>
-      this._classifyOpenAiPagerLabel(this._extractMdastText(child))
+    const linkInfos = linkChildren.map((child) =>
+      this._getOpenAiPagerLinkInfo(this._extractMdastText(child))
     );
 
-    if (kinds.some((kind) => !kind)) {
+    if (linkInfos.some((info) => !info)) {
       return null;
     }
 
-    if (kinds.length === 1) {
-      return kinds[0];
-    }
-
-    if (kinds.includes('previous') && kinds.includes('next')) {
-      return 'previous-next';
-    }
-
-    return null;
+    return { linkInfos };
   }
 
   /**
@@ -1325,27 +1387,100 @@ export class MarkdownService {
   }
 
   /**
-   * 识别 pager 链接标签首词。
+   * 规范化 pager 标签，便于跨 DOM / Markdown AST 共享判断逻辑。
    *
    * @param {string} label
-   * @returns {'previous'|'next'|null}
+   * @returns {string}
    * @private
    */
-  _classifyOpenAiPagerLabel(label) {
-    const normalized = String(label || '')
+  _normalizeOpenAiPagerLabel(label) {
+    return String(label || '')
       .replace(/\s+/g, ' ')
       .trim()
       .toLowerCase();
+  }
 
-    if (normalized === 'previous' || normalized.startsWith('previous ')) {
-      return 'previous';
+  /**
+   * 提取单个 pager 链接的方向与“是否显式 pager 控件”信息。
+   *
+   * @param {string} label
+   * @param {string[]} [segments]
+   * @returns {{kind: 'previous'|'next', exact: boolean, hasTitle: boolean}|null}
+   * @private
+   */
+  _getOpenAiPagerLinkInfo(label, segments = []) {
+    const normalized = this._normalizeOpenAiPagerLabel(label);
+    const normalizedSegments = segments
+      .map((segment) => this._normalizeOpenAiPagerLabel(segment))
+      .filter(Boolean);
+
+    const exactSegmentKind = normalizedSegments.find(
+      (segment) => segment === 'previous' || segment === 'next'
+    );
+
+    if (exactSegmentKind) {
+      return {
+        kind: exactSegmentKind,
+        exact: true,
+        hasTitle: normalizedSegments.some((segment) => segment !== exactSegmentKind) || normalized !== exactSegmentKind,
+      };
     }
 
-    if (normalized === 'next' || normalized.startsWith('next ')) {
-      return 'next';
+    if (normalized === 'previous' || normalized === 'next') {
+      return {
+        kind: normalized,
+        exact: true,
+        hasTitle: false,
+      };
+    }
+
+    const titledMatch = normalized.match(/^(previous|next)\s+\S/);
+    if (titledMatch) {
+      return {
+        kind: titledMatch[1],
+        exact: false,
+        hasTitle: true,
+      };
     }
 
     return null;
+  }
+
+  /**
+   * 判断一组 pager 链接是否足够明确，可以安全地当作页尾 pager 删除。
+   *
+   * @param {Array<{kind: 'previous'|'next', exact: boolean, hasTitle: boolean}>} linkInfos
+   * @param {{requireExact?: boolean}} [options]
+   * @returns {boolean}
+   * @private
+   */
+  _shouldStripOpenAiPagerLinkGroup(linkInfos, options = {}) {
+    const { requireExact = false } = options;
+
+    if (!Array.isArray(linkInfos) || linkInfos.length === 0 || linkInfos.length > 2) {
+      return false;
+    }
+
+    if (linkInfos.some((info) => !info)) {
+      return false;
+    }
+
+    if (requireExact && linkInfos.some((info) => !info.exact)) {
+      return false;
+    }
+
+    const hasPrevious = linkInfos.some((info) => info.kind === 'previous');
+    const hasNext = linkInfos.some((info) => info.kind === 'next');
+
+    if (hasPrevious && hasNext) {
+      return true;
+    }
+
+    if (linkInfos.length === 1) {
+      return linkInfos[0].exact && !linkInfos[0].hasTitle;
+    }
+
+    return false;
   }
 
   /**
