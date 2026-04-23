@@ -389,9 +389,31 @@ node scripts/use-kindle-config.js current
   - Indentation in Markdown (Pandoc treats indented blocks inside HTML as code).
 - **Fixes**:
   - **Overflow**: `src/services/pandocPdfService.js` uses `xurl` and disables `breakanywhere` inside critical tags if needed.
+  - **Plain fenced code blocks**: Pandoc may emit unlabeled fenced blocks as LaTeX `verbatim`, not `Highlighting`. If long code still overflows after tuning `Highlighting`, also recustomize lowercase `verbatim` in the injected header.
   - **Tables**: Ensure empty lines before/after tables.
   - **Indentation**: Remove indentation for `<table>` or custom components inside HTML wrappers to prevent "code block" rendering.
   - **Ltablex**: Do NOT use `ltablex` if it causes column overflow; we use standard tabular environments or calibrated widths.
+  - **Pandoc header injection**: Prefer `--include-in-header` with a temporary `.tex` file. Do **not** stuff raw LaTeX commands into `header-includes=...`; Pandoc may escape them into `\\usepackage`, which breaks XeLaTeX.
+  - **Remote image safety**: Do **not** decide PDF-safe image handling from URL/query params alone. Detect the downloaded bytes (or at least the actual response format) before deciding whether to keep the asset or convert it to PNG.
+  - **Figure blocks**: If scraped Markdown contains `![](image.png)Text...` on one line, split it into an image block plus a following paragraph before Pandoc. Otherwise the PDF may render badly even when generation succeeds.
+
+### Structured Content Extraction (Critical)
+- **Problem**: Pages with real UI structure (`<table>`, tablists/panels, footer pager, screenshot pairs) look fine on the website but become truncated, flattened, or visually chaotic in Markdown/PDF.
+- **Root Cause**:
+  - HTML structure was flattened too early, then "fixed" later with broad Markdown regexes.
+  - Site-specific cleanup leaked into global cleanup rules.
+- **Preferred Fix Order**:
+  1. **Inspect generated Markdown first**. If `pdfs/markdown/*.md` is already wrong, do **not** debug Pandoc first.
+  2. Prefer **DOM-structured transforms before Turndown**:
+     - remove footer pager by DOM shape, not text guesswork;
+     - preserve `<table>` as real Markdown tables;
+     - convert tablists/panels into headings or lists before flattening.
+  3. If post-Markdown cleanup is still needed, prefer **AST-based parsing** over regex.
+  4. Use regex only as a **narrow fallback**, anchored to a specific malformed pattern.
+- **Guardrails**:
+  - Do **not** use global `Copy Page` / `Copied` cleanup for every site; scope it to the target site.
+  - Do **not** remove content based on tokens like `[` / `]` alone; keyboard shortcuts and inline code often use them legitimately.
+  - When fixing one broken page, scan sibling patterns (`commands`, `models`, `quickstart`, `use-cases`) for the same structural smell before stopping.
 
 ### Visual Glitches
 - **Problem**: Floating headers/footers appear in PDF.

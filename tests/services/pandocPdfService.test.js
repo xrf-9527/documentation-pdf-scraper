@@ -126,6 +126,37 @@ describe('PandocPdfService', () => {
       expect(args).not.toContain('CJKmainfont=Arial Unicode MS');
     });
 
+    it('should include a header file instead of raw header-includes latex', () => {
+      const args = service._buildPandocArgs('input.md', 'output.pdf', {
+        headerIncludePath: '/tmp/pandoc-header.tex',
+      });
+
+      expect(args).toContain('--include-in-header');
+      expect(args).toContain('/tmp/pandoc-header.tex');
+      expect(args.some((arg) => arg.includes('header-includes='))).toBe(false);
+    });
+
+    it('should build latex args without invoking pandoc pdf-engine orchestration', () => {
+      const args = service._buildPandocLatexArgs('input.md', 'output.tex', {
+        headerIncludePath: '/tmp/pandoc-header.tex',
+      });
+
+      expect(args).toContain('--standalone');
+      expect(args).toContain('--to=latex');
+      expect(args).not.toContain('--pdf-engine=xelatex');
+    });
+
+    it('should configure both Highlighting and plain verbatim blocks to wrap long lines', () => {
+      const header = service._getPandocHeaderContent();
+
+      expect(header).toContain(
+        '\\RecustomVerbatimEnvironment{verbatim}{Verbatim}{breaklines,breakanywhere,fontsize=\\small}'
+      );
+      expect(header).toContain(
+        '\\DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines,breakanywhere,fontsize=\\small,commandchars=\\\\\\{\\}}'
+      );
+    });
+
     it('should allow overriding the CJK main font from config', () => {
       const customService = new PandocPdfService({
         logger: mockLogger,
@@ -610,25 +641,103 @@ describe('PandocPdfService', () => {
     });
   });
 
+  describe('_detectDownloadedImageFormat', () => {
+    it('should detect webp from bytes even when headers are missing', () => {
+      const webpBuffer = Buffer.concat([
+        Buffer.from('RIFF', 'ascii'),
+        Buffer.from([0x00, 0x00, 0x00, 0x00]),
+        Buffer.from('WEBP', 'ascii'),
+      ]);
+
+      expect(service._detectDownloadedImageFormat(webpBuffer, '')).toBe('webp');
+    });
+
+    it('should still convert when the detected format is unsafe even if the url looks safe', () => {
+      expect(
+        service._shouldConvertDownloadedImage(
+          'https://cdn.example.com/chart?fm=png',
+          '',
+          'webp'
+        )
+      ).toBe(true);
+    });
+  });
+
   describe('_runPandoc', () => {
-    it('should reject if output file not created', async () => {
+    it('should create and cleanup a pandoc header include file for each run', async () => {
       const inputPath = path.join(tempDir, 'input.md');
       const outputPath = path.join(tempDir, 'output.pdf');
+      let headerPath = '';
+      let invocation = 0;
 
       fs.writeFileSync(inputPath, '# Test', 'utf8');
 
-      // Mock spawn to simulate success but no file
-      const spawnSpy = vi.mocked(spawn).mockImplementation(() => {
-        const mockChild = {
+      const spawnSpy = vi.mocked(spawn).mockImplementation((_command, args) => {
+        invocation += 1;
+        const currentInvocation = invocation;
+        return {
           stdout: { on: vi.fn() },
           stderr: { on: vi.fn() },
           on: vi.fn((event, callback) => {
             if (event === 'close') {
-              setTimeout(() => callback(0), 10); // Exit code 0
+              setTimeout(() => {
+                if (currentInvocation === 1) {
+                  const includeIndex = args.indexOf('--include-in-header');
+                  headerPath = includeIndex >= 0 ? args[includeIndex + 1] : '';
+                  expect(headerPath).toBeTruthy();
+                  expect(fs.existsSync(headerPath)).toBe(true);
+
+                  const outputIndex = args.indexOf('-o');
+                  fs.writeFileSync(args[outputIndex + 1], '\\documentclass{article}', 'utf8');
+                } else {
+                  const outputDirArg = args.find((arg) => arg.startsWith('-output-directory='));
+                  const outputDir = outputDirArg?.slice('-output-directory='.length) || tempDir;
+                  fs.writeFileSync(path.join(outputDir, 'input.pdf'), '%PDF-1.4', 'utf8');
+                }
+
+                callback(0);
+              }, 10);
             }
           }),
         };
-        return mockChild;
+      });
+
+      await service._runPandoc(inputPath, outputPath, {});
+
+      expect(fs.existsSync(outputPath)).toBe(true);
+      expect(fs.existsSync(headerPath)).toBe(false);
+      expect(spawnSpy).toHaveBeenCalledTimes(3);
+
+      spawnSpy.mockReset();
+    });
+
+    it('should reject if output file not created', async () => {
+      const inputPath = path.join(tempDir, 'input.md');
+      const outputPath = path.join(tempDir, 'output.pdf');
+      let invocation = 0;
+
+      fs.writeFileSync(inputPath, '# Test', 'utf8');
+
+      // Mock spawn to simulate success but no file
+      const spawnSpy = vi.mocked(spawn).mockImplementation((_command, args) => {
+        invocation += 1;
+        const currentInvocation = invocation;
+
+        return {
+          stdout: { on: vi.fn() },
+          stderr: { on: vi.fn() },
+          on: vi.fn((event, callback) => {
+            if (event === 'close') {
+              setTimeout(() => {
+                if (currentInvocation === 1) {
+                  const outputIndex = args.indexOf('-o');
+                  fs.writeFileSync(args[outputIndex + 1], '\\documentclass{article}', 'utf8');
+                }
+                callback(0);
+              }, 10); // Exit code 0
+            }
+          }),
+        };
       });
 
       await expect(service._runPandoc(inputPath, outputPath, {})).rejects.toThrow('PDF 文件未生成');
