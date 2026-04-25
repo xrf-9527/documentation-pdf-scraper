@@ -49,6 +49,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   libxrender1 \
   libxss1 \
   libxtst6 \
+  lmodern \
   make \
   pandoc \
   python3 \
@@ -66,6 +67,3 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/b
 
 USER node
 WORKDIR /workspace
-
-# Install a Chrome build that matches the Puppeteer workflow used by this project.
-RUN npx puppeteer browsers install chrome

@@ -14,11 +14,13 @@ describe('Windows host container workspace', () => {
     expect(dockerfile).not.toContain('.claude');
     expect(dockerfile).not.toContain('init-firewall.sh');
     expect(dockerfile).toContain('pandoc');
+    expect(dockerfile).toContain('lmodern');
     expect(dockerfile).toContain('texlive-xetex');
     expect(dockerfile).toContain('texlive-latex-extra');
     expect(dockerfile).toContain('fonts-noto-cjk');
     expect(dockerfile).toMatch(/uv\/install\.sh|install uv/i);
     expect(dockerfile).toContain('make');
+    expect(dockerfile).not.toContain('puppeteer browsers install chrome');
   });
 
   test('devcontainer should use named volumes for dependency directories on Windows hosts', async () => {
@@ -31,10 +33,12 @@ describe('Windows host container workspace', () => {
     expect(config).not.toContain('.claude');
     expect(config).not.toContain('CLAUDE_CONFIG_DIR');
     expect(config).not.toContain('claude-code-bashhistory');
+    expect(config).toContain('/home/node/.cache/puppeteer');
     expect(config).toContain('/workspace/node_modules');
     expect(config).toContain('/workspace/.venv');
     expect(config).toContain('type=volume');
     expect(config).toContain('postCreateCommand');
+    expect(config).toContain('npx puppeteer browsers install chrome');
   });
 
   test('project docs should document Windows container development separately from macOS host development', async () => {
