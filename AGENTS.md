@@ -403,7 +403,12 @@ node scripts/use-kindle-config.js current
   - **Ltablex**: Do NOT use `ltablex` if it causes column overflow; we use standard tabular environments or calibrated widths.
   - **Pandoc header injection**: Prefer `--include-in-header` with a temporary `.tex` file. Do **not** stuff raw LaTeX commands into `header-includes=...`; Pandoc may escape them into `\\usepackage`, which breaks XeLaTeX.
   - **Remote image safety**: Do **not** decide PDF-safe image handling from URL/query params alone. Detect the downloaded bytes (or at least the actual response format) before deciding whether to keep the asset or convert it to PNG.
+  - **Standalone screenshots**: Bare remote Markdown images that represent screenshots should be constrained with Pandoc image attributes such as `{width=100%}` so XeLaTeX scales them to the text block instead of using unsafe natural dimensions.
+  - **Image sizing precedence**: Preserve explicit image attributes from source Markdown. Do not overwrite author-provided sizes, and keep icon-specific sizing separate from screenshot/page-width sizing.
   - **Figure blocks**: If scraped Markdown contains `![](image.png)Text...` on one line, split it into an image block plus a following paragraph before Pandoc. Otherwise the PDF may render badly even when generation succeeds.
+- **Visual spot-checks**:
+  - Compare suspect PDF pages against the rendered website and, when possible, the raw source image asset. Some official screenshots are already cropped/truncated at the image boundary; distinguish that from a PDF layout overflow.
+  - For screenshot-heavy pages, verify the rendered PDF image box stays inside page margins and that following headings/paragraphs resume below the image rather than beside or over it.
 
 ### Structured Content Extraction (Critical)
 - **Problem**: Pages with real UI structure (`<table>`, tablists/panels, footer pager, screenshot pairs) look fine on the website but become truncated, flattened, or visually chaotic in Markdown/PDF.
