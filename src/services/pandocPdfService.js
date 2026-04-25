@@ -1621,6 +1621,7 @@ export class PandocPdfService {
     // 5. 将图片 URL 中的 fm=webp 替换为 fm=png（LaTeX 不支持 webp 格式）
     cleaned = cleaned.replace(/fm=webp/g, 'fm=png');
     cleaned = this._constrainStandaloneIconImagesForPdf(cleaned);
+    cleaned = this._constrainStandaloneRemoteImagesForPdf(cleaned);
     cleaned = this._formatStandaloneIconCardsForPdf(cleaned);
     cleaned = this._convertLongInlineCodeToBreakablePaths(cleaned);
 
@@ -1662,6 +1663,25 @@ export class PandocPdfService {
     });
   }
 
+  _constrainStandaloneRemoteImagesForPdf(content) {
+    return this._mapProseSegments(content, (segment) => {
+      const references = this._collectMarkdownImageReferences(segment).filter((reference) =>
+        this._shouldConstrainStandaloneRemoteImage(segment, reference)
+      );
+
+      if (references.length === 0) {
+        return segment;
+      }
+
+      let result = segment;
+      for (const reference of references.sort((a, b) => b.end - a.end)) {
+        result = `${result.slice(0, reference.end)}{width=100%}${result.slice(reference.end)}`;
+      }
+
+      return result;
+    });
+  }
+
   _shouldConstrainStandaloneIconImage(content, reference) {
     if (!this._isPdfIconImageUrl(reference.url)) {
       return false;
@@ -1671,6 +1691,22 @@ export class PandocPdfService {
       return false;
     }
 
+    return this._isStandaloneMarkdownReference(content, reference);
+  }
+
+  _shouldConstrainStandaloneRemoteImage(content, reference) {
+    if (!this._isRemoteImageUrl(reference.url) || this._isPdfIconImageUrl(reference.url)) {
+      return false;
+    }
+
+    if (this._hasMarkdownImageAttributesAfter(content, reference.end)) {
+      return false;
+    }
+
+    return this._isStandaloneMarkdownReference(content, reference);
+  }
+
+  _isStandaloneMarkdownReference(content, reference) {
     const lineStart = content.lastIndexOf('\n', reference.start) + 1;
     const nextLineBreak = content.indexOf('\n', reference.end);
     const lineEnd = nextLineBreak === -1 ? content.length : nextLineBreak;

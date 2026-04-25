@@ -587,19 +587,19 @@ describe('PandocPdfService', () => {
       expect(result).toContain('# Real title');
     });
 
-    it('should preserve webp markdown images for the conversion stage', () => {
+    it('should preserve and constrain webp markdown images for the conversion stage', () => {
       const input = '![App screenshot](https://developers.openai.com/images/app.webp)';
       const result = service._cleanMarkdownContent(input);
 
-      expect(result).toBe('![App screenshot](https://developers.openai.com/images/app.webp)');
+      expect(result).toBe('![App screenshot](https://developers.openai.com/images/app.webp){width=100%}');
     });
 
-    it('should keep images when fm=webp is rewritten to a safe output format', () => {
+    it('should keep and constrain images when fm=webp is rewritten to a safe output format', () => {
       const input =
         '![Chart](https://cdn.example.com/chart.webp?fm=webp&fit=max)';
       const result = service._cleanMarkdownContent(input);
 
-      expect(result).toBe('![Chart](https://cdn.example.com/chart.webp?fm=png&fit=max)');
+      expect(result).toBe('![Chart](https://cdn.example.com/chart.webp?fm=png&fit=max){width=100%}');
     });
 
     it('should preserve raw html img tags that point to webp assets for conversion', () => {
@@ -616,6 +616,30 @@ describe('PandocPdfService', () => {
 
       expect(result).toBe(
         '![](https://developers.openai.com/images/codex/codex-banner-icon.webp){width=40px}'
+      );
+    });
+
+    it('should constrain standalone screenshot images to page width', () => {
+      const input = [
+        '#### Agent internet access',
+        '',
+        '![](https://developers.openai.com/images/codex/changelog/internet_access.png)',
+        '',
+        'Now you can give Codex access to the internet during task execution.',
+      ].join('\n');
+      const result = service._cleanMarkdownContent(input);
+
+      expect(result).toContain(
+        '![](https://developers.openai.com/images/codex/changelog/internet_access.png){width=100%}'
+      );
+    });
+
+    it('should not override existing image sizing attributes', () => {
+      const input = '![](https://developers.openai.com/images/codex/changelog/internet_access.png){width=60%}';
+      const result = service._cleanMarkdownContent(input);
+
+      expect(result).toBe(
+        '![](https://developers.openai.com/images/codex/changelog/internet_access.png){width=60%}'
       );
     });
 
