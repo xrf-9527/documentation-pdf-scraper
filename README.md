@@ -17,18 +17,36 @@ A professional web scraper and PDF generator that converts documentation website
 
 ## Quick Start
 
-### Installation
+### Environment choices
+
+- **Windows host (recommended):** use Docker Desktop + the repo's `devcontainer`. This keeps the runtime in a Linux container even when the host is Windows. The workspace is mounted at `/workspace`, while `node_modules` and `.venv` live on named volumes to avoid slow NTFS bind-mount writes.
+- **macOS (recommended):** develop directly on the host. Docker is optional on macOS and mainly useful when reproducing a container-specific issue.
+
+### Windows host with Docker Desktop / devcontainer
+
+1. Install Docker Desktop.
+2. Open the repository in VS Code and run **Dev Containers: Reopen in Container**.
+3. Wait for the container's `postCreateCommand` to finish `make install`.
+4. Run the normal workflow inside the container:
+
+```bash
+npm run docs:openai
+make clean && make run
+```
+
+### macOS host installation
 
 ```bash
 # Install all dependencies (Node.js + Python via uv)
 make install
 ```
 
-### Prerequisites
-- Node.js >= 18.0.0
+### macOS host prerequisites
+- Node.js >= 18.18.0
 - Python >= 3.8 (for PDF processing)
 - uv (Python package/environment manager)
-- Pandoc (required for Markdown-to-PDF conversion)
+- Pandoc
+- A LaTeX engine that provides `xelatex`
 
 ## Usage
 

@@ -1568,6 +1568,11 @@ export class PandocPdfService {
       });
     });
 
+    cleaned = this._normalizeReferenceCardBlocks(cleaned);
+    cleaned = this._formatReferenceTablesForPdf(cleaned);
+    cleaned = this._formatMetricCatalogTablesForPdf(cleaned);
+    cleaned = this._formatSandboxApprovalTablesForPdf(cleaned);
+
     // 4. 修复 blockquote 中的列表项（防止 LaTeX \end{quote} / missing \item 错误）
     // 4a. Remove empty list items inside blockquotes: "> -" or "> *" with no content
     cleaned = cleaned.replace(/^(>\s*)-\s*$/gm, '$1');
@@ -1615,18 +1620,625 @@ export class PandocPdfService {
 
     // 5. 将图片 URL 中的 fm=webp 替换为 fm=png（LaTeX 不支持 webp 格式）
     cleaned = cleaned.replace(/fm=webp/g, 'fm=png');
+    cleaned = this._constrainStandaloneIconImagesForPdf(cleaned);
+    cleaned = this._constrainStandaloneRemoteImagesForPdf(cleaned);
+    cleaned = this._formatStandaloneIconCardsForPdf(cleaned);
+    cleaned = this._convertLongInlineCodeToBreakablePaths(cleaned);
 
     return cleaned;
   }
 
-  /**
-   * 构建 Pandoc 命令行参数
-   * @param {string} inputPath
-   * @param {string} outputPath
-   * @param {Object} options
-   * @returns {string[]}
-   * @private
-   */
+  _formatStandaloneIconCardsForPdf(content) {
+    return this._mapProseSegments(content, (segment) =>
+      segment.replace(
+        /(^|\n)(!\[[^\]\n]*\]\([^\n\r]*\)(?:\{[^}\n\r]*\})?)[ \t]*\n{2,}###[ \t]+([^\n\r]+)(?=\n|$)/g,
+        (match, prefix, imageMarkdown, heading) => {
+          const references = this._collectMarkdownImageReferences(imageMarkdown);
+          if (references.length !== 1 || !this._isPdfIconImageUrl(references[0].url)) {
+            return match;
+          }
+
+          return `${prefix}${imageMarkdown} **${heading.trim()}**`;
+        }
+      )
+    );
+  }
+
+  _constrainStandaloneIconImagesForPdf(content) {
+    return this._mapProseSegments(content, (segment) => {
+      const references = this._collectMarkdownImageReferences(segment).filter((reference) =>
+        this._shouldConstrainStandaloneIconImage(segment, reference)
+      );
+
+      if (references.length === 0) {
+        return segment;
+      }
+
+      let result = segment;
+      for (const reference of references.sort((a, b) => b.end - a.end)) {
+        result = `${result.slice(0, reference.end)}{width=40px}${result.slice(reference.end)}`;
+      }
+
+      return result;
+    });
+  }
+
+  _constrainStandaloneRemoteImagesForPdf(content) {
+    return this._mapProseSegments(content, (segment) => {
+      const references = this._collectMarkdownImageReferences(segment).filter((reference) =>
+        this._shouldConstrainStandaloneRemoteImage(segment, reference)
+      );
+
+      if (references.length === 0) {
+        return segment;
+      }
+
+      let result = segment;
+      for (const reference of references.sort((a, b) => b.end - a.end)) {
+        result = `${result.slice(0, reference.end)}{width=100%}${result.slice(reference.end)}`;
+      }
+
+      return result;
+    });
+  }
+
+  _shouldConstrainStandaloneIconImage(content, reference) {
+    if (!this._isPdfIconImageUrl(reference.url)) {
+      return false;
+    }
+
+    if (this._hasMarkdownImageAttributesAfter(content, reference.end)) {
+      return false;
+    }
+
+    return this._isStandaloneMarkdownReference(content, reference);
+  }
+
+  _shouldConstrainStandaloneRemoteImage(content, reference) {
+    if (!this._isRemoteImageUrl(reference.url) || this._isPdfIconImageUrl(reference.url)) {
+      return false;
+    }
+
+    if (this._hasMarkdownImageAttributesAfter(content, reference.end)) {
+      return false;
+    }
+
+    return this._isStandaloneMarkdownReference(content, reference);
+  }
+
+  _isStandaloneMarkdownReference(content, reference) {
+    const lineStart = content.lastIndexOf('\n', reference.start) + 1;
+    const nextLineBreak = content.indexOf('\n', reference.end);
+    const lineEnd = nextLineBreak === -1 ? content.length : nextLineBreak;
+    const before = content.slice(lineStart, reference.start).trim();
+    const after = content.slice(reference.end, lineEnd).trim();
+
+    return before === '' && after === '';
+  }
+
+  _hasMarkdownImageAttributesAfter(content, endIndex) {
+    return /^[ \t]*\{[^}\n]*\}/.test(content.slice(endIndex));
+  }
+
+  _isPdfIconImageUrl(url) {
+    if (!this._isRemoteImageUrl(url)) {
+      return false;
+    }
+
+    try {
+      const pathname = new URL(url).pathname.toLowerCase();
+      const filename = path.basename(pathname);
+      return /(^|[-_])icon([-.]|$)/.test(filename);
+    } catch {
+      return false;
+    }
+  }
+
+  _formatReferenceTablesForPdf(content) {
+    const lines = String(content || '').split('\n');
+    const output = [];
+
+    for (let index = 0; index < lines.length; index++) {
+      const headerCells = this._parseMarkdownTableRow(lines[index]);
+      const separatorCells = this._parseMarkdownTableRow(lines[index + 1] || '');
+
+      if (
+        !this._isReferenceTableHeader(headerCells) ||
+        !this._isMarkdownTableSeparator(separatorCells)
+      ) {
+        output.push(lines[index]);
+        continue;
+      }
+
+      output.push(
+        '| Key | Type / Values | Details |',
+        '|:------------------------------------|:----------------------------|:----------------------------------------------------|'
+      );
+      index += 2;
+
+      while (index < lines.length) {
+        const rowCells = this._parseMarkdownTableRow(lines[index]);
+        if (!rowCells || rowCells.length !== 3) {
+          break;
+        }
+
+        const [key, typeValues, details] = rowCells;
+        output.push(
+          `| ${this._formatReferenceTableCell(key)} | ${this._formatReferenceTableCell(
+            typeValues
+          )} | ${this._formatReferenceTableCell(details)} |`
+        );
+
+        index++;
+      }
+
+      index--;
+    }
+
+    return output.join('\n');
+  }
+
+  _formatReferenceTableCell(cell) {
+    return this._convertLongInlineCodeLineToBreakablePaths(
+      this._normalizeMarkdownLinkSpacing(this._normalizeReferenceTableCell(cell))
+    );
+  }
+
+  _normalizeMarkdownLinkSpacing(value) {
+    return String(value || '').replace(/(\]\([^)]+\))(?=[A-Za-z0-9])/g, '$1 ');
+  }
+
+  _formatMetricCatalogTablesForPdf(content) {
+    const lines = String(content || '').split('\n');
+    const output = [];
+
+    for (let index = 0; index < lines.length; index++) {
+      const headerCells = this._parseMarkdownTableRow(lines[index]);
+      const separatorCells = this._parseMarkdownTableRow(lines[index + 1] || '');
+
+      if (
+        !this._isMetricCatalogTableHeader(headerCells) ||
+        !this._isMarkdownTableSeparator(separatorCells)
+      ) {
+        output.push(lines[index]);
+        continue;
+      }
+
+      output.push(
+        '| Metric | Type | Fields | Description |',
+        '|:------------------------------------------|:--------------|:------------------------------|:------------------------------------------------|'
+      );
+      index += 2;
+
+      while (index < lines.length) {
+        const rowCells = this._parseMarkdownTableRow(lines[index]);
+        if (!rowCells || rowCells.length !== 4) {
+          break;
+        }
+
+        const [metric, type, fields, description] = rowCells;
+        output.push(
+          `| ${this._formatReferenceTableCell(metric)} | ${this._formatReferenceTableCell(
+            type
+          )} | ${this._formatReferenceTableCell(fields)} | ${this._formatReferenceTableCell(
+            description
+          )} |`
+        );
+
+        index++;
+      }
+
+      index--;
+    }
+
+    return output.join('\n');
+  }
+
+  _formatSandboxApprovalTablesForPdf(content) {
+    const lines = String(content || '').split('\n');
+    const output = [];
+
+    for (let index = 0; index < lines.length; index++) {
+      const headerCells = this._parseMarkdownTableRow(lines[index]);
+      const separatorCells = this._parseMarkdownTableRow(lines[index + 1] || '');
+
+      if (
+        !this._isSandboxApprovalTableHeader(headerCells) ||
+        !this._isMarkdownTableSeparator(separatorCells)
+      ) {
+        output.push(lines[index]);
+        continue;
+      }
+
+      output.push(
+        '| Intent | Flags | Effect |',
+        '|:--------------------------------|:----------------------------------------------|:----------------------------------------------------|'
+      );
+      index += 2;
+
+      while (index < lines.length) {
+        const rowCells = this._parseMarkdownTableRow(lines[index]);
+        if (!rowCells || rowCells.length !== 3) {
+          break;
+        }
+
+        const [intent, flags, effect] = rowCells;
+        output.push(
+          `| ${this._formatReferenceTableCell(intent)} | ${this._formatReferenceTableCell(
+            flags
+          )} | ${this._formatReferenceTableCell(effect)} |`
+        );
+
+        index++;
+      }
+
+      index--;
+    }
+
+    return output.join('\n');
+  }
+
+  _isSandboxApprovalTableHeader(cells) {
+    if (!cells || cells.length !== 3) {
+      return false;
+    }
+
+    const normalized = cells.map((cell) => cell.replace(/\s+/g, ' ').trim().toLowerCase());
+
+    return normalized[0] === 'intent' && normalized[1] === 'flags' && normalized[2] === 'effect';
+  }
+
+  _isMetricCatalogTableHeader(cells) {
+    if (!cells || cells.length !== 4) {
+      return false;
+    }
+
+    const normalized = cells.map((cell) => cell.replace(/\s+/g, ' ').trim().toLowerCase());
+
+    return (
+      normalized[0] === 'metric' &&
+      normalized[1] === 'type' &&
+      normalized[2] === 'fields' &&
+      normalized[3] === 'description'
+    );
+  }
+
+  _isReferenceTableHeader(cells) {
+    if (!cells || cells.length !== 3) {
+      return false;
+    }
+
+    const normalized = cells.map((cell) => cell.replace(/\s+/g, ' ').trim().toLowerCase());
+
+    return (
+      normalized[0] === 'key' &&
+      normalized[1] === 'type / values' &&
+      normalized[2] === 'details'
+    );
+  }
+
+  _isMarkdownTableSeparator(cells) {
+    return (
+      Array.isArray(cells) &&
+      cells.length > 0 &&
+      cells.every((cell) => /^:?-{3,}:?$/.test(cell.trim()))
+    );
+  }
+
+  _parseMarkdownTableRow(line) {
+    const trimmed = String(line || '').trim();
+    if (!trimmed.startsWith('|') || !trimmed.endsWith('|')) {
+      return null;
+    }
+
+    const cells = [];
+    let current = '';
+    const body = trimmed.slice(1, -1);
+
+    for (let index = 0; index < body.length; index++) {
+      const char = body[index];
+      const previous = index > 0 ? body[index - 1] : '';
+
+      if (char === '|' && previous !== '\\') {
+        cells.push(current.trim());
+        current = '';
+        continue;
+      }
+
+      current += char;
+    }
+
+    cells.push(current.trim());
+
+    return cells;
+  }
+
+  _normalizeReferenceTableCell(cell) {
+    return String(cell || '').replace(/\\\|/g, '|').trim();
+  }
+
+  _stripWrappingCodeSpan(value) {
+    const trimmed = String(value || '').trim();
+    const match = trimmed.match(/^`([^`]*)`$/s);
+    return match ? match[1].trim() : trimmed;
+  }
+
+  _normalizeReferenceCardBlocks(content) {
+    const lines = String(content || '').split('\n');
+    const output = [];
+    const seenKeys = new Set();
+
+    for (let index = 0; index < lines.length; index++) {
+      const headerCells = this._parseMarkdownTableRow(lines[index]);
+      const separatorCells = this._parseMarkdownTableRow(lines[index + 1] || '');
+      if (
+        this._isReferenceTableHeader(headerCells) &&
+        this._isMarkdownTableSeparator(separatorCells)
+      ) {
+        output.push(lines[index], lines[index + 1]);
+        index += 2;
+
+        while (index < lines.length) {
+          const rowCells = this._parseMarkdownTableRow(lines[index]);
+          if (!rowCells || rowCells.length !== 3) {
+            break;
+          }
+
+          seenKeys.add(this._referenceKeyId(rowCells[0]));
+          output.push(lines[index]);
+          index++;
+        }
+
+        index--;
+        continue;
+      }
+
+      const block = this._parseReferenceCardBlock(lines, index);
+      if (!block) {
+        output.push(lines[index]);
+        this._rememberLinearizedReferenceKey(lines[index], seenKeys);
+        continue;
+      }
+
+      if (!seenKeys.has(block.keyId)) {
+        output.push(
+          `**Key:** ${block.key}`,
+          '',
+          `**Type / Values:** ${this._stripWrappingCodeSpan(block.typeValues)}`,
+          '',
+          `**Details:** ${block.details}`,
+          ''
+        );
+        seenKeys.add(block.keyId);
+      }
+
+      index = block.endIndex;
+    }
+
+    return output.join('\n');
+  }
+
+  _rememberLinearizedReferenceKey(line, seenKeys) {
+    const match = String(line || '').match(/^\*\*Key:\*\*\s+(.+)$/);
+    if (match) {
+      seenKeys.add(this._referenceKeyId(match[1]));
+    }
+  }
+
+  _parseReferenceCardBlock(lines, startIndex) {
+    if (String(lines[startIndex] || '').trim() !== 'Key') {
+      return null;
+    }
+
+    const keyIndex = this._nextNonBlankLineIndex(lines, startIndex + 1);
+    const typeLabelIndex = this._nextNonBlankLineIndex(lines, keyIndex + 1);
+    const typeValueIndex = this._nextNonBlankLineIndex(lines, typeLabelIndex + 1);
+    const detailsLabelIndex = this._nextNonBlankLineIndex(lines, typeValueIndex + 1);
+    const detailsStartIndex = this._nextNonBlankLineIndex(lines, detailsLabelIndex + 1);
+
+    if (
+      keyIndex === -1 ||
+      typeLabelIndex === -1 ||
+      typeValueIndex === -1 ||
+      detailsLabelIndex === -1 ||
+      detailsStartIndex === -1 ||
+      String(lines[typeLabelIndex]).trim() !== 'Type / Values' ||
+      String(lines[detailsLabelIndex]).trim() !== 'Details'
+    ) {
+      return null;
+    }
+
+    const detailLines = [];
+    let endIndex = detailsStartIndex;
+
+    for (let index = detailsStartIndex; index < lines.length; index++) {
+      if (String(lines[index] || '').trim() === '') {
+        break;
+      }
+
+      detailLines.push(lines[index].trim());
+      endIndex = index;
+    }
+
+    if (detailLines.length === 0) {
+      return null;
+    }
+
+    const key = String(lines[keyIndex] || '').trim();
+
+    return {
+      key,
+      keyId: this._referenceKeyId(key),
+      typeValues: String(lines[typeValueIndex] || '').trim(),
+      details: detailLines.join(' '),
+      endIndex,
+    };
+  }
+
+  _nextNonBlankLineIndex(lines, startIndex) {
+    for (let index = startIndex; index < lines.length; index++) {
+      if (String(lines[index] || '').trim() !== '') {
+        return index;
+      }
+    }
+
+    return -1;
+  }
+
+  _referenceKeyId(value) {
+    return this._stripWrappingCodeSpan(this._normalizeReferenceTableCell(value));
+  }
+
+  _convertLongInlineCodeToBreakablePaths(content) {
+    const lines = String(content || '').split('\n');
+    let inFence = false;
+    let fenceChar = '';
+    let fenceCount = 0;
+
+    return lines
+      .map((line) => {
+        const fenceMatch = line.match(/^(\s*)(`{3,}|~{3,})/);
+        if (fenceMatch) {
+          const char = fenceMatch[2][0];
+          const count = fenceMatch[2].length;
+          if (!inFence) {
+            inFence = true;
+            fenceChar = char;
+            fenceCount = count;
+          } else if (char === fenceChar && count >= fenceCount) {
+            inFence = false;
+          }
+          return line;
+        }
+
+        if (inFence || /^\s*#/.test(line)) {
+          return line;
+        }
+
+        return this._convertLongInlineCodeLineToBreakablePaths(line);
+      })
+      .join('\n');
+  }
+
+  _convertLongInlineCodeLineToBreakablePaths(line) {
+    let output = '';
+    let index = 0;
+
+    while (index < line.length) {
+      const openingIndex = line.indexOf('`', index);
+      if (openingIndex === -1) {
+        output += line.slice(index);
+        break;
+      }
+
+      const tickCount = this._countBackticks(line, openingIndex);
+      const marker = '`'.repeat(tickCount);
+      const codeStart = openingIndex + tickCount;
+      const closingIndex = this._findClosingBacktickRun(line, marker, codeStart);
+
+      if (closingIndex === -1) {
+        output += line.slice(index);
+        break;
+      }
+
+      const code = line.slice(codeStart, closingIndex);
+      output += line.slice(index, openingIndex);
+      output += this._convertInlineCodePath(code, marker);
+      index = closingIndex + tickCount;
+    }
+
+    return output;
+  }
+
+  _countBackticks(line, startIndex) {
+    let count = 0;
+    while (line[startIndex + count] === '`') {
+      count++;
+    }
+    return count;
+  }
+
+  _findClosingBacktickRun(line, marker, startIndex) {
+    let searchIndex = startIndex;
+
+    while (searchIndex < line.length) {
+      const closingIndex = line.indexOf(marker, searchIndex);
+      if (closingIndex === -1) {
+        return -1;
+      }
+
+      if (line[closingIndex + marker.length] !== '`') {
+        return closingIndex;
+      }
+
+      searchIndex = closingIndex + marker.length;
+    }
+
+    return -1;
+  }
+
+  _convertInlineCodePath(code, marker) {
+    const shouldConvert =
+      code.includes('|') || (code.length >= 24 && /[\\/._:-]/.test(code));
+
+    if (!shouldConvert) {
+      return `${marker}${code}${marker}`;
+    }
+
+    return `\\texttt{${this._escapeBreakableInlineCodeForLatex(code)}}`;
+  }
+
+  _escapeBreakableInlineCodeForLatex(code) {
+    const escaped = [];
+    const breakAfter = new Set(['/', '\\', '.', '_', '-', ':', '|', ',', '=', '{', '}']);
+
+    for (const char of code) {
+      switch (char) {
+        case '\\':
+          escaped.push('\\textbackslash{}');
+          break;
+        case '$':
+          escaped.push('\\$');
+          break;
+        case '%':
+          escaped.push('\\%');
+          break;
+        case '&':
+          escaped.push('\\&');
+          break;
+        case '#':
+          escaped.push('\\#');
+          break;
+        case '_':
+          escaped.push('\\_');
+          break;
+        case '{':
+          escaped.push('\\{');
+          break;
+        case '}':
+          escaped.push('\\}');
+          break;
+        case '~':
+          escaped.push('\\textasciitilde{}');
+          break;
+        case '^':
+          escaped.push('\\textasciicircum{}');
+          break;
+        case '|':
+          escaped.push('|');
+          break;
+        default:
+          escaped.push(char);
+      }
+
+      if (breakAfter.has(char)) {
+        escaped.push('\\allowbreak{}');
+      }
+    }
+
+    return escaped.join('');
+  }
+
   _buildPandocArgs(inputPath, outputPath, options = {}) {
     const markdownPdfConfig = {
       ...(this.config.markdownPdf || {}),

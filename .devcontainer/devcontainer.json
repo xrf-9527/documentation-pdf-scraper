@@ -1,15 +1,11 @@
 {
-  "name": "Claude Code Sandbox",
+  "name": "documentation-pdf-scraper",
   "build": {
     "dockerfile": "Dockerfile",
     "args": {
-      "TZ": "${localEnv:TZ:America/Los_Angeles}"
+      "TZ": "${localEnv:TZ:UTC}"
     }
   },
-  "runArgs": [
-    "--cap-add=NET_ADMIN",
-    "--cap-add=NET_RAW"
-  ],
   "customizations": {
     "vscode": {
       "extensions": [
@@ -22,31 +18,22 @@
         "editor.defaultFormatter": "esbenp.prettier-vscode",
         "editor.codeActionsOnSave": {
           "source.fixAll.eslint": "explicit"
-        },
-        "terminal.integrated.defaultProfile.linux": "zsh",
-        "terminal.integrated.profiles.linux": {
-          "bash": {
-            "path": "bash",
-            "icon": "terminal-bash"
-          },
-          "zsh": {
-            "path": "zsh"
-          }
         }
       }
     }
   },
   "remoteUser": "node",
   "mounts": [
-    "source=claude-code-bashhistory-${devcontainerId},target=/commandhistory,type=volume",
-    "source=claude-code-config-${devcontainerId},target=/home/node/.claude,type=volume"
+    "source=${localWorkspaceFolderBasename}-node_modules-${devcontainerId},target=/workspace/node_modules,type=volume",
+    "source=${localWorkspaceFolderBasename}-venv-${devcontainerId},target=/workspace/.venv,type=volume",
+    "source=${localWorkspaceFolderBasename}-uv-cache-${devcontainerId},target=/home/node/.cache/uv,type=volume",
+    "source=${localWorkspaceFolderBasename}-puppeteer-cache-${devcontainerId},target=/home/node/.cache/puppeteer,type=volume"
   ],
   "remoteEnv": {
     "NODE_OPTIONS": "--max-old-space-size=4096",
-    "CLAUDE_CONFIG_DIR": "/home/node/.claude",
-    "POWERLEVEL9K_DISABLE_GITSTATUS": "true"
+    "UV_LINK_MODE": "copy"
   },
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=delegated",
   "workspaceFolder": "/workspace",
-  // "postCreateCommand": "sudo /usr/local/bin/init-firewall.sh"
+  "postCreateCommand": "bash -lc \"sudo mkdir -p /workspace/node_modules /workspace/.venv /home/node/.cache/uv /home/node/.cache/puppeteer && sudo chown -R node:node /workspace/node_modules /workspace/.venv /home/node/.cache/uv /home/node/.cache/puppeteer && make install && npx puppeteer browsers install chrome\""
 }
