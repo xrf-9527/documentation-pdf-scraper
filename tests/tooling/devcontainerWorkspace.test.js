@@ -17,6 +17,7 @@ describe('Windows host container workspace', () => {
     expect(dockerfile).toContain('lmodern');
     expect(dockerfile).toContain('texlive-xetex');
     expect(dockerfile).toContain('texlive-latex-extra');
+    expect(dockerfile).toContain('texlive-plain-generic');
     expect(dockerfile).toContain('fonts-noto-cjk');
     expect(dockerfile).toMatch(/uv\/install\.sh|install uv/i);
     expect(dockerfile).toContain('make');
