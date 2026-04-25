@@ -26,6 +26,14 @@ make clean && make run
 make test && make lint  # Must show 516+ passing tests
 ```
 
+## Development Environment Rules
+
+- **Windows host:** the preferred development environment is this repository's `.devcontainer`, running as a **Linux container** on Docker Desktop.
+- Inside the container, treat `/workspace` as the canonical project path and use bash-compatible commands.
+- Keep dependency-heavy paths on named volumes when using a Windows host: `/workspace/node_modules`, `/workspace/.venv`, and the uv cache.
+- **macOS:** prefer local host development. Do not require Docker for normal macOS work unless reproducing a container-specific issue.
+- WSL is optional, not required. Do not assume `\\wsl$` or `/home/...` paths unless the current operator explicitly chose WSL.
+
 ## Project Structure & Architecture
 
 ### Directory Layout
