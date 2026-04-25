@@ -360,6 +360,26 @@ describe('PandocPdfService', () => {
       );
     });
 
+    it('should preserve sandbox approval tables with PDF-friendly column widths', () => {
+      const input = [
+        '| Intent | Flags | Effect |',
+        '| --- | --- | --- |',
+        '| Automatically edit but ask for approval to run untrusted commands | `--sandbox workspace-write --ask-for-approval untrusted` | Codex can read and edit files but asks for approval before running untrusted commands. |',
+        '| Dangerous full access | `--dangerously-bypass-approvals-and-sandbox` (alias: `--yolo`) | [Elevated Risk](https://help.openai.com/articles/20001061)No sandbox; no approvals *(not recommended)* |',
+      ].join('\n');
+
+      const result = service._cleanMarkdownContent(input);
+
+      expect(result).toContain('| Intent | Flags | Effect |');
+      expect(result).toContain(
+        '|:--------------------------------|:----------------------------------------------|:----------------------------------------------------|'
+      );
+      expect(result).toContain(
+        '\\texttt{-\\allowbreak{}-\\allowbreak{}dangerously-\\allowbreak{}bypass-\\allowbreak{}approvals-\\allowbreak{}and-\\allowbreak{}sandbox} (alias: `--yolo`)'
+      );
+      expect(result).toContain('[Elevated Risk](https://help.openai.com/articles/20001061) No sandbox');
+    });
+
     it('should remove duplicate reference card blocks after a reference table', () => {
       const input = [
         '| Key | Type / Values | Details |',

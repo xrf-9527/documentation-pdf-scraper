@@ -1571,6 +1571,7 @@ export class PandocPdfService {
     cleaned = this._normalizeReferenceCardBlocks(cleaned);
     cleaned = this._formatReferenceTablesForPdf(cleaned);
     cleaned = this._formatMetricCatalogTablesForPdf(cleaned);
+    cleaned = this._formatSandboxApprovalTablesForPdf(cleaned);
 
     // 4. 修复 blockquote 中的列表项（防止 LaTeX \end{quote} / missing \item 错误）
     // 4a. Remove empty list items inside blockquotes: "> -" or "> *" with no content
@@ -1742,7 +1743,13 @@ export class PandocPdfService {
   }
 
   _formatReferenceTableCell(cell) {
-    return this._convertLongInlineCodeLineToBreakablePaths(this._normalizeReferenceTableCell(cell));
+    return this._convertLongInlineCodeLineToBreakablePaths(
+      this._normalizeMarkdownLinkSpacing(this._normalizeReferenceTableCell(cell))
+    );
+  }
+
+  _normalizeMarkdownLinkSpacing(value) {
+    return String(value || '').replace(/(\]\([^)]+\))(?=[A-Za-z0-9])/g, '$1 ');
   }
 
   _formatMetricCatalogTablesForPdf(content) {
@@ -1789,6 +1796,60 @@ export class PandocPdfService {
     }
 
     return output.join('\n');
+  }
+
+  _formatSandboxApprovalTablesForPdf(content) {
+    const lines = String(content || '').split('\n');
+    const output = [];
+
+    for (let index = 0; index < lines.length; index++) {
+      const headerCells = this._parseMarkdownTableRow(lines[index]);
+      const separatorCells = this._parseMarkdownTableRow(lines[index + 1] || '');
+
+      if (
+        !this._isSandboxApprovalTableHeader(headerCells) ||
+        !this._isMarkdownTableSeparator(separatorCells)
+      ) {
+        output.push(lines[index]);
+        continue;
+      }
+
+      output.push(
+        '| Intent | Flags | Effect |',
+        '|:--------------------------------|:----------------------------------------------|:----------------------------------------------------|'
+      );
+      index += 2;
+
+      while (index < lines.length) {
+        const rowCells = this._parseMarkdownTableRow(lines[index]);
+        if (!rowCells || rowCells.length !== 3) {
+          break;
+        }
+
+        const [intent, flags, effect] = rowCells;
+        output.push(
+          `| ${this._formatReferenceTableCell(intent)} | ${this._formatReferenceTableCell(
+            flags
+          )} | ${this._formatReferenceTableCell(effect)} |`
+        );
+
+        index++;
+      }
+
+      index--;
+    }
+
+    return output.join('\n');
+  }
+
+  _isSandboxApprovalTableHeader(cells) {
+    if (!cells || cells.length !== 3) {
+      return false;
+    }
+
+    const normalized = cells.map((cell) => cell.replace(/\s+/g, ' ').trim().toLowerCase());
+
+    return normalized[0] === 'intent' && normalized[1] === 'flags' && normalized[2] === 'effect';
   }
 
   _isMetricCatalogTableHeader(cells) {
