@@ -310,6 +310,111 @@ describe('PandocPdfService', () => {
       expect(result).toBe('> Some text\n>\n> - item 1');
     });
 
+    it('should preserve reference tables with PDF-friendly column widths', () => {
+      const input = [
+        'Before.',
+        '',
+        '| Key | Type / Values | Details |',
+        '| --- | --- | --- |',
+        '| `approval_policy.granular.request_permissions` | `boolean` | When `true`, prompts from the `request_permissions` tool are allowed to surface. |',
+        '| `approval_policy` | `untrusted \\| on-request \\| never` | Controls when Codex pauses for approval. |',
+        '',
+        'After.',
+      ].join('\n');
+
+      const result = service._cleanMarkdownContent(input);
+
+      expect(result).toContain('| Key | Type / Values | Details |');
+      expect(result).toContain(
+        '|:------------------------------------|:----------------------------|:----------------------------------------------------|'
+      );
+      expect(result).toContain(
+        '\\texttt{approval\\_\\allowbreak{}policy.\\allowbreak{}granular.\\allowbreak{}request\\_\\allowbreak{}permissions}'
+      );
+      expect(result).toContain('`boolean`');
+      expect(result).toContain(
+        '\\texttt{untrusted |\\allowbreak{} on-\\allowbreak{}request |\\allowbreak{} never}'
+      );
+      expect(result).toContain('After.');
+    });
+
+    it('should remove duplicate reference card blocks after a reference table', () => {
+      const input = [
+        '| Key | Type / Values | Details |',
+        '| --- | --- | --- |',
+        '| `approval_policy.granular.request_permissions` | `boolean` | Table details. |',
+        '',
+        'Key',
+        '',
+        '`approval_policy.granular.request_permissions`',
+        '',
+        'Type / Values',
+        '',
+        '`boolean`',
+        '',
+        'Details',
+        '',
+        'Duplicate card details.',
+        '',
+        'After.',
+      ].join('\n');
+
+      const result = service._cleanMarkdownContent(input);
+
+      expect(result).toContain('| Key | Type / Values | Details |');
+      expect(result).toContain('Table details.');
+      expect(result).not.toContain('Duplicate card details.');
+      expect(result).toContain('After.');
+    });
+
+    it('should normalize card-only reference blocks when no table was present', () => {
+      const input = [
+        'Key',
+        '',
+        '`standalone.key`',
+        '',
+        'Type / Values',
+        '',
+        '`string`',
+        '',
+        'Details',
+        '',
+        'Only card details.',
+      ].join('\n');
+
+      const result = service._cleanMarkdownContent(input);
+
+      expect(result).toContain('**Key:** `standalone.key`');
+      expect(result).toContain('**Type / Values:** string');
+      expect(result).toContain('**Details:** Only card details.');
+    });
+
+    it('should convert long inline paths to breakable LaTeX paths', () => {
+      const input =
+        'Use `$REPO_ROOT/.agents/plugins/marketplace.json` for a repo-scoped list and keep `plugins[]` unchanged.';
+
+      const result = service._cleanMarkdownContent(input);
+
+      expect(result).toContain(
+        '\\texttt{\\$REPO\\_\\allowbreak{}ROOT/\\allowbreak{}.\\allowbreak{}agents/\\allowbreak{}plugins/\\allowbreak{}marketplace.\\allowbreak{}json}'
+      );
+      expect(result).toContain('`plugins[]`');
+    });
+
+    it('should not pair closing inline-code ticks with later inline-code openings', () => {
+      const input =
+        'Use `$REPO_ROOT/.agents/plugins/marketplace.json`, then add a `./`\\-prefixed path relative to the marketplace root and set `interface.displayName`.';
+
+      const result = service._cleanMarkdownContent(input);
+
+      expect(result).toContain(
+        '\\texttt{\\$REPO\\_\\allowbreak{}ROOT/\\allowbreak{}.\\allowbreak{}agents/\\allowbreak{}plugins/\\allowbreak{}marketplace.\\allowbreak{}json}'
+      );
+      expect(result).toContain('`./`\\-prefixed path relative to the marketplace root');
+      expect(result).toContain('`interface.displayName`');
+      expect(result).not.toContain('\\texttt{\\-\\allowbreak{}prefixed');
+    });
+
     it('should strip multi-line MDX export const declarations', () => {
       const input = [
         '# Quickstart',
