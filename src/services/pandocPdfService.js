@@ -1570,6 +1570,7 @@ export class PandocPdfService {
 
     cleaned = this._normalizeReferenceCardBlocks(cleaned);
     cleaned = this._formatReferenceTablesForPdf(cleaned);
+    cleaned = this._formatMetricCatalogTablesForPdf(cleaned);
 
     // 4. 修复 blockquote 中的列表项（防止 LaTeX \end{quote} / missing \item 错误）
     // 4a. Remove empty list items inside blockquotes: "> -" or "> *" with no content
@@ -1669,6 +1670,67 @@ export class PandocPdfService {
 
   _formatReferenceTableCell(cell) {
     return this._convertLongInlineCodeLineToBreakablePaths(this._normalizeReferenceTableCell(cell));
+  }
+
+  _formatMetricCatalogTablesForPdf(content) {
+    const lines = String(content || '').split('\n');
+    const output = [];
+
+    for (let index = 0; index < lines.length; index++) {
+      const headerCells = this._parseMarkdownTableRow(lines[index]);
+      const separatorCells = this._parseMarkdownTableRow(lines[index + 1] || '');
+
+      if (
+        !this._isMetricCatalogTableHeader(headerCells) ||
+        !this._isMarkdownTableSeparator(separatorCells)
+      ) {
+        output.push(lines[index]);
+        continue;
+      }
+
+      output.push(
+        '| Metric | Type | Fields | Description |',
+        '|:------------------------------------------|:--------------|:------------------------------|:------------------------------------------------|'
+      );
+      index += 2;
+
+      while (index < lines.length) {
+        const rowCells = this._parseMarkdownTableRow(lines[index]);
+        if (!rowCells || rowCells.length !== 4) {
+          break;
+        }
+
+        const [metric, type, fields, description] = rowCells;
+        output.push(
+          `| ${this._formatReferenceTableCell(metric)} | ${this._formatReferenceTableCell(
+            type
+          )} | ${this._formatReferenceTableCell(fields)} | ${this._formatReferenceTableCell(
+            description
+          )} |`
+        );
+
+        index++;
+      }
+
+      index--;
+    }
+
+    return output.join('\n');
+  }
+
+  _isMetricCatalogTableHeader(cells) {
+    if (!cells || cells.length !== 4) {
+      return false;
+    }
+
+    const normalized = cells.map((cell) => cell.replace(/\s+/g, ' ').trim().toLowerCase());
+
+    return (
+      normalized[0] === 'metric' &&
+      normalized[1] === 'type' &&
+      normalized[2] === 'fields' &&
+      normalized[3] === 'description'
+    );
   }
 
   _isReferenceTableHeader(cells) {

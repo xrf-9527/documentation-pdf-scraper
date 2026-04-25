@@ -338,6 +338,28 @@ describe('PandocPdfService', () => {
       expect(result).toContain('After.');
     });
 
+    it('should preserve metric catalog tables with PDF-friendly column widths', () => {
+      const input = [
+        '| Metric | Type | Fields | Description |',
+        '| --- | --- | --- | --- |',
+        '| `websocket.request.duration_ms` | histogram | `success` | WebSocket request duration in milliseconds. |',
+        '| `responses_api_engine_service_tbt.duration_ms` | histogram |   | Responses API engine service time-between-token timing. |',
+      ].join('\n');
+
+      const result = service._cleanMarkdownContent(input);
+
+      expect(result).toContain('| Metric | Type | Fields | Description |');
+      expect(result).toContain(
+        '|:------------------------------------------|:--------------|:------------------------------|:------------------------------------------------|'
+      );
+      expect(result).toContain(
+        '\\texttt{websocket.\\allowbreak{}request.\\allowbreak{}duration\\_\\allowbreak{}ms}'
+      );
+      expect(result).toContain(
+        '\\texttt{responses\\_\\allowbreak{}api\\_\\allowbreak{}engine\\_\\allowbreak{}service\\_\\allowbreak{}tbt.\\allowbreak{}duration\\_\\allowbreak{}ms}'
+      );
+    });
+
     it('should remove duplicate reference card blocks after a reference table', () => {
       const input = [
         '| Key | Type / Values | Details |',
