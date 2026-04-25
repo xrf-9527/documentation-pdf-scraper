@@ -1619,9 +1619,82 @@ export class PandocPdfService {
 
     // 5. 将图片 URL 中的 fm=webp 替换为 fm=png（LaTeX 不支持 webp 格式）
     cleaned = cleaned.replace(/fm=webp/g, 'fm=png');
+    cleaned = this._constrainStandaloneIconImagesForPdf(cleaned);
+    cleaned = this._formatStandaloneIconCardsForPdf(cleaned);
     cleaned = this._convertLongInlineCodeToBreakablePaths(cleaned);
 
     return cleaned;
+  }
+
+  _formatStandaloneIconCardsForPdf(content) {
+    return this._mapProseSegments(content, (segment) =>
+      segment.replace(
+        /(^|\n)(!\[[^\]\n]*\]\([^\n\r]*\)(?:\{[^}\n\r]*\})?)[ \t]*\n{2,}###[ \t]+([^\n\r]+)(?=\n|$)/g,
+        (match, prefix, imageMarkdown, heading) => {
+          const references = this._collectMarkdownImageReferences(imageMarkdown);
+          if (references.length !== 1 || !this._isPdfIconImageUrl(references[0].url)) {
+            return match;
+          }
+
+          return `${prefix}${imageMarkdown} **${heading.trim()}**`;
+        }
+      )
+    );
+  }
+
+  _constrainStandaloneIconImagesForPdf(content) {
+    return this._mapProseSegments(content, (segment) => {
+      const references = this._collectMarkdownImageReferences(segment).filter((reference) =>
+        this._shouldConstrainStandaloneIconImage(segment, reference)
+      );
+
+      if (references.length === 0) {
+        return segment;
+      }
+
+      let result = segment;
+      for (const reference of references.sort((a, b) => b.end - a.end)) {
+        result = `${result.slice(0, reference.end)}{width=40px}${result.slice(reference.end)}`;
+      }
+
+      return result;
+    });
+  }
+
+  _shouldConstrainStandaloneIconImage(content, reference) {
+    if (!this._isPdfIconImageUrl(reference.url)) {
+      return false;
+    }
+
+    if (this._hasMarkdownImageAttributesAfter(content, reference.end)) {
+      return false;
+    }
+
+    const lineStart = content.lastIndexOf('\n', reference.start) + 1;
+    const nextLineBreak = content.indexOf('\n', reference.end);
+    const lineEnd = nextLineBreak === -1 ? content.length : nextLineBreak;
+    const before = content.slice(lineStart, reference.start).trim();
+    const after = content.slice(reference.end, lineEnd).trim();
+
+    return before === '' && after === '';
+  }
+
+  _hasMarkdownImageAttributesAfter(content, endIndex) {
+    return /^[ \t]*\{[^}\n]*\}/.test(content.slice(endIndex));
+  }
+
+  _isPdfIconImageUrl(url) {
+    if (!this._isRemoteImageUrl(url)) {
+      return false;
+    }
+
+    try {
+      const pathname = new URL(url).pathname.toLowerCase();
+      const filename = path.basename(pathname);
+      return /(^|[-_])icon([-.]|$)/.test(filename);
+    } catch {
+      return false;
+    }
   }
 
   _formatReferenceTablesForPdf(content) {

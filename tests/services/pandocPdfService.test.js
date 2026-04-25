@@ -590,6 +590,34 @@ describe('PandocPdfService', () => {
       expect(result).toBe('<img src="https://developers.openai.com/images/app.webp" alt="App screenshot">');
     });
 
+    it('should constrain standalone icon images to their website display size', () => {
+      const input = '![](https://developers.openai.com/images/codex/codex-banner-icon.webp)';
+      const result = service._cleanMarkdownContent(input);
+
+      expect(result).toBe(
+        '![](https://developers.openai.com/images/codex/codex-banner-icon.webp){width=40px}'
+      );
+    });
+
+    it('should keep standalone icon card titles inline with their icon', () => {
+      const input = [
+        '![](https://developers.openai.com/images/codex/codex-banner-icon.webp)',
+        '',
+        '### [Use the Codex app on Windows](https://developers.openai.com/codex/app/windows)',
+        '',
+        'Work across projects in the native Windows app.',
+      ].join('\n');
+      const result = service._cleanMarkdownContent(input);
+
+      expect(result).toBe(
+        [
+          '![](https://developers.openai.com/images/codex/codex-banner-icon.webp){width=40px} **[Use the Codex app on Windows](https://developers.openai.com/codex/app/windows)**',
+          '',
+          'Work across projects in the native Windows app.',
+        ].join('\n')
+      );
+    });
+
     it('should preserve export/import lines inside fenced code blocks', () => {
       // Python example containing `import`, and shell `export VAR=...` must
       // survive because they are inside fenced code blocks.
@@ -686,6 +714,17 @@ describe('PandocPdfService', () => {
         expect.stringContaining('media-')
       );
       expect(result.content).toBe('![App screenshot](/tmp/converted/app.png "caption")');
+    });
+
+    it('should preserve markdown image attributes when rewriting remote images', async () => {
+      vi.spyOn(service, '_materializePdfSafeImage').mockResolvedValue('/tmp/converted/icon.png');
+
+      const result = await service._preparePdfImages(
+        '![](https://developers.openai.com/images/codex/codex-banner-icon.webp){width=40px}',
+        tempDir
+      );
+
+      expect(result.content).toBe('![](/tmp/converted/icon.png){width=40px}');
     });
 
     it('should downgrade unsafe markdown images to plain links when conversion fails', async () => {
