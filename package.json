@@ -42,7 +42,7 @@
     "mdast-util-mdx": "^3.0.0",
     "micromark-extension-mdxjs": "^3.0.0",
     "p-limit": "^7.3.0",
-    "p-queue": "^9.2.0",
+    "p-queue": "^9.3.0",
     "pdf-lib": "^1.17.1",
     "puppeteer": "^24.42.0",
     "puppeteer-extra": "^3.3.6",
